@@ -1,0 +1,118 @@
+from pydantic import BaseModel, Field, HttpUrl
+
+
+class NormalizePriceListRequest(BaseModel):
+    file_url: HttpUrl = Field(
+        description="Cloudflare-accessible image URL for the laundry price list to normalize.",
+        examples=["https://imagedelivery.net/account-id/laundry-price-list/public"],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "file_url": "https://imagedelivery.net/account-id/laundry-price-list/public"
+            }
+        }
+    }
+
+
+class ParsedPriceListRow(BaseModel):
+    original_name: str = Field(
+        min_length=1,
+        description="Item label exactly or near-exactly as extracted from the laundry's source list.",
+        examples=["GRADUATION GOWN"],
+    )
+    price: int = Field(
+        ge=0,
+        description="Price parsed from the laundry list in whole currency units.",
+        examples=[2500],
+    )
+
+
+class MatchedPriceListRow(ParsedPriceListRow):
+    matched_item_type: str = Field(
+        min_length=1,
+        description="Canonical internal item type chosen for the source laundry item.",
+        examples=["graduation gown"],
+    )
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Model confidence score for the item-type match, between 0 and 1.",
+        examples=[0.99],
+    )
+    supported_services: list[str] = Field(
+        description="Supported service types for the matched internal item type.",
+        examples=[["dry cleaning"]],
+    )
+
+
+class UnmatchedPriceListRow(ParsedPriceListRow):
+    reason: str = Field(
+        min_length=1,
+        description="Reason the item could not be confidently matched to an internal item type.",
+        examples=["Could not confidently map item."],
+    )
+
+
+class MatchingResultRow(BaseModel):
+    original_name: str
+    price: int
+    matched_item_type: str | None = None
+    confidence: float = Field(ge=0.0, le=1.0)
+    reason: str | None = None
+
+
+class MatchingResultPayload(BaseModel):
+    laundry_name: str | None = None
+    items: list[MatchingResultRow]
+
+
+class NormalizedPriceListResponse(BaseModel):
+    success: bool = Field(
+        default=True,
+        description="Whether the normalization request completed successfully.",
+    )
+    laundry_name: str | None = Field(
+        default=None,
+        description="Laundry/business name detected from the source image when available.",
+        examples=["1124 Laundry/Dry Cleaners"],
+    )
+    currency: str = Field(
+        description="Currency code used for the returned parsed prices.",
+        examples=["NGN"],
+    )
+    source_file_url: HttpUrl = Field(
+        description="Original Cloudflare image URL used for the normalization request.",
+    )
+    items: list[MatchedPriceListRow] = Field(
+        description="Successfully matched laundry items with canonical internal item types and supported services.",
+    )
+    unmatched_items: list[UnmatchedPriceListRow] = Field(
+        description="Laundry items that could not be matched safely to an internal item type.",
+    )
+    raw_ocr_text: str = Field(
+        description="Raw OCR text returned from the vision extraction step for debugging and audit purposes.",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "success": True,
+                "laundry_name": "1124 Laundry/Dry Cleaners",
+                "currency": "NGN",
+                "source_file_url": "https://imagedelivery.net/account-id/laundry-price-list/public",
+                "items": [
+                    {
+                        "original_name": "GRADUATION GOWN",
+                        "price": 2500,
+                        "matched_item_type": "graduation gown",
+                        "confidence": 0.99,
+                        "supported_services": ["dry cleaning"],
+                    }
+                ],
+                "unmatched_items": [],
+                "raw_ocr_text": "1124 LAUNDRY/DRY CLEANERS\nPRICE LIST\nGRADUATION GOWN 2,500",
+            }
+        }
+    }

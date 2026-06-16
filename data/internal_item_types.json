@@ -1,0 +1,221 @@
+{
+  "categories": [
+    {
+      "name": "casual wear",
+      "items": [
+        "casual shirt",
+        "t-shirt",
+        "polo",
+        "casual trouser",
+        "jeans",
+        "chinos",
+        "shorts",
+        "casual skirt",
+        "joggers"
+      ]
+    },
+    {
+      "name": "formal / corporate wear",
+      "items": [
+        "corporate shirt",
+        "blouse",
+        "corporate trouser",
+        "corporate skirt",
+        "pleated skirt",
+        "pleated dress",
+        "waistcoat",
+        "tie",
+        "lab coat"
+      ]
+    },
+    {
+      "name": "native / traditional wear",
+      "items": [
+        "agbada",
+        "male kaftan",
+        "female kaftan",
+        "senator wear",
+        "senator top",
+        "senator trouser",
+        "native top",
+        "native trouser",
+        "native set",
+        "buba",
+        "iro and buba",
+        "wrapper",
+        "ankara wrapper",
+        "lace wrapper",
+        "gele",
+        "head tie",
+        "jalabia",
+        "etibo",
+        "dansiki",
+        "aso oke",
+        "woko",
+        "native blouse",
+        "native skirt"
+      ]
+    },
+    {
+      "name": "suits & blazers",
+      "items": [
+        "suit 2pcs",
+        "suit 3pcs",
+        "suit jacket",
+        "blazer",
+        "tuxedo",
+        "safari suit"
+      ]
+    },
+    {
+      "name": "dresses & gowns",
+      "items": [
+        "dress",
+        "short dress",
+        "long dress",
+        "gown",
+        "short gown",
+        "long gown",
+        "evening gown",
+        "wedding gown",
+        "jumpsuit",
+        "beaded gown",
+        "delicate gown",
+        "bubu gown"
+      ]
+    },
+    {
+      "name": "sports / gym wear",
+      "items": [
+        "jersey",
+        "tracksuit",
+        "gym top",
+        "gym shorts",
+        "leggings",
+        "swimsuit"
+      ]
+    },
+    {
+      "name": "outerwear",
+      "items": [
+        "jacket",
+        "winter jacket",
+        "sweater",
+        "hoodie",
+        "cardigan",
+        "coverall"
+      ]
+    },
+    {
+      "name": "children wear",
+      "items": [
+        "children shirt",
+        "children t-shirt",
+        "children trouser",
+        "children shorts",
+        "children dress",
+        "children skirt",
+        "children suit",
+        "children agbada",
+        "children kaftan",
+        "children senator wear",
+        "children native wear",
+        "children jacket"
+      ]
+    },
+    {
+      "name": "underwear & sleepwear",
+      "items": [
+        "singlet",
+        "vest",
+        "boxer",
+        "panties",
+        "socks",
+        "pajamas",
+        "pajama top",
+        "pajama trouser",
+        "lingerie",
+        "bath robe"
+      ]
+    },
+    {
+      "name": "household linen",
+      "items": [
+        "towel",
+        "face towel",
+        "hand towel",
+        "bedsheet",
+        "bedspread",
+        "pillowcase",
+        "duvet cover",
+        "duvet (small)",
+        "duvet (big)",
+        "blanket",
+        "table cover",
+        "throw pillow"
+      ]
+    },
+    {
+      "name": "curtains & large fabrics",
+      "items": [
+        "curtain (light)",
+        "curtain (heavy)",
+        "lace fabric"
+      ]
+    },
+    {
+      "name": "rugs & floor items",
+      "items": [
+        "rug",
+        "carpet",
+        "foot mat",
+        "bath mat"
+      ]
+    },
+    {
+      "name": "footwear",
+      "items": [
+        "shoe",
+        "sneakers",
+        "sandals",
+        "slippers",
+        "boots"
+      ]
+    },
+    {
+      "name": "accessories",
+      "items": [
+        "face cap",
+        "native cap",
+        "hat",
+        "scarf",
+        "handkerchief",
+        "belt",
+        "bag"
+      ]
+    },
+    {
+      "name": "upholstery",
+      "items": [
+        "sofa cover",
+        "cushion cover",
+        "car seat cover",
+        "armchair",
+        "sofa seat",
+        "dining chair",
+        "mattress cover"
+      ]
+    },
+    {
+      "name": "special / delicate items",
+      "items": [
+        "graduation gown",
+        "academic gown",
+        "beaded clothes",
+        "embellished garment",
+        "delicate garment",
+        "teddy bear"
+      ]
+    }
+  ]
+}
