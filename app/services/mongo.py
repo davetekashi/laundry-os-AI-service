@@ -1,4 +1,5 @@
 from functools import lru_cache
+from datetime import datetime
 
 from bson import ObjectId
 from pymongo import MongoClient
@@ -49,3 +50,45 @@ def fetch_laundry_context_documents(laundry_id: str) -> dict:
     }
 
     return context
+
+
+def fetch_laundry_report_documents(
+    laundry_id: str,
+    start_date: datetime,
+    end_date: datetime,
+) -> dict:
+    db = get_database()
+    laundry_object_id = to_object_id(laundry_id)
+
+    laundry = db.laundries.find_one({"_id": laundry_object_id})
+    if not laundry:
+        raise ValueError("Laundry not found.")
+
+    payments_query = {
+        "laundryId": laundry_object_id,
+        "paidAt": {"$gte": start_date, "$lte": end_date},
+    }
+    orders_query = {
+        "laundryId": laundry_object_id,
+        "createdAt": {"$gte": start_date, "$lte": end_date},
+    }
+    logistics_query = {
+        "laundryId": laundry_object_id,
+        "createdAt": {"$gte": start_date, "$lte": end_date},
+    }
+
+    return {
+        "laundry": laundry,
+        "bank_account": db.laundrybankaccounts.find_one(
+            {"laundryId": laundry_object_id},
+            sort=[("isDefault", -1), ("createdAt", -1)],
+        ),
+        "wallet": db.laundrywallets.find_one({"laundryId": laundry_object_id}),
+        "customers": list(db.laundrycustomers.find({"laundryId": laundry_object_id})),
+        "members": list(db.laundrymembers.find({"laundryId": laundry_object_id})),
+        "payments_in_range": list(db.customerpayments.find(payments_query)),
+        "orders_in_range": list(db.orders.find(orders_query)),
+        "all_orders": list(db.orders.find({"laundryId": laundry_object_id})),
+        "all_debts": list(db.laundrydebts.find({"laundryId": laundry_object_id})),
+        "logistics_jobs_in_range": list(db.logisticsjobs.find(logistics_query)),
+    }

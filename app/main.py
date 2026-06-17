@@ -1,5 +1,6 @@
 from app.api.routes.chat import router as chat_router
 from app.api.routes.context import router as context_router
+from app.api.routes.report import router as report_router
 from fastapi import FastAPI
 
 from app.api.routes.price_list import router as price_list_router
@@ -47,12 +48,20 @@ app = FastAPI(
                 "responses after login-triggered context preparation."
             ),
         },
+        {
+            "name": "reports",
+            "description": (
+                "Endpoints for generating date-range business reports from MongoDB-backed laundry data. "
+                "These compute factual metrics in code, then optionally use AI only for narrative formatting."
+            ),
+        },
     ],
 )
 
 app.include_router(price_list_router, prefix="/api/v1")
 app.include_router(context_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
+app.include_router(report_router, prefix="/api/v1")
 
 
 @app.get(
