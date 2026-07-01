@@ -45,7 +45,9 @@ async def normalize_price_list_endpoint(
     payload: NormalizePriceListRequest,
 ) -> NormalizedPriceListResponse:
     try:
-        return await normalize_price_list([str(file_url) for file_url in payload.file_urls])
+        return await normalize_price_list(
+            [str(file_url) for file_url in payload.resolved_file_urls()]
+        )
     except PriceListNormalizationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

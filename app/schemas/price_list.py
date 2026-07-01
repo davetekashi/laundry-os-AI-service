@@ -1,17 +1,27 @@
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 
 class NormalizePriceListRequest(BaseModel):
-    file_urls: list[HttpUrl] = Field(
-        min_length=1,
-        description="One or more Cloudflare-accessible image URLs for the laundry price list to normalize.",
-        examples=[["https://imagedelivery.net/account-id/laundry-price-list-1/public"]],
+    file_url: HttpUrl | list[HttpUrl] = Field(
+        description="Cloudflare-accessible image URL or array of image URLs for the laundry price list to normalize.",
+        examples=["https://imagedelivery.net/account-id/laundry-price-list-1/public"],
     )
+
+    @model_validator(mode="after")
+    def validate_urls(self):
+        if isinstance(self.file_url, list) and not self.file_url:
+            raise ValueError("file_url must contain at least one URL when an array is provided.")
+        return self
+
+    def resolved_file_urls(self) -> list[HttpUrl]:
+        if isinstance(self.file_url, list):
+            return self.file_url
+        return [self.file_url]
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "file_urls": [
+                "file_url": [
                     "https://imagedelivery.net/account-id/laundry-price-list-1/public",
                     "https://imagedelivery.net/account-id/laundry-price-list-2/public"
                 ]
