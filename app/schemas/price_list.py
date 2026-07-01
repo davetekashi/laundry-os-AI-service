@@ -2,15 +2,19 @@ from pydantic import BaseModel, Field, HttpUrl
 
 
 class NormalizePriceListRequest(BaseModel):
-    file_url: HttpUrl = Field(
-        description="Cloudflare-accessible image URL for the laundry price list to normalize.",
-        examples=["https://imagedelivery.net/account-id/laundry-price-list/public"],
+    file_urls: list[HttpUrl] = Field(
+        min_length=1,
+        description="One or more Cloudflare-accessible image URLs for the laundry price list to normalize.",
+        examples=[["https://imagedelivery.net/account-id/laundry-price-list-1/public"]],
     )
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "file_url": "https://imagedelivery.net/account-id/laundry-price-list/public"
+                "file_urls": [
+                    "https://imagedelivery.net/account-id/laundry-price-list-1/public",
+                    "https://imagedelivery.net/account-id/laundry-price-list-2/public"
+                ]
             }
         }
     }
@@ -82,8 +86,8 @@ class NormalizedPriceListResponse(BaseModel):
         description="Currency code used for the returned parsed prices.",
         examples=["NGN"],
     )
-    source_file_url: HttpUrl = Field(
-        description="Original Cloudflare image URL used for the normalization request.",
+    source_file_urls: list[HttpUrl] = Field(
+        description="Original Cloudflare image URLs used for the normalization request.",
     )
     items: list[MatchedPriceListRow] = Field(
         description="Successfully matched laundry items with canonical internal item types and supported services.",
@@ -101,7 +105,10 @@ class NormalizedPriceListResponse(BaseModel):
                 "success": True,
                 "laundry_name": "1124 Laundry/Dry Cleaners",
                 "currency": "NGN",
-                "source_file_url": "https://imagedelivery.net/account-id/laundry-price-list/public",
+                "source_file_urls": [
+                    "https://imagedelivery.net/account-id/laundry-price-list-1/public",
+                    "https://imagedelivery.net/account-id/laundry-price-list-2/public"
+                ],
                 "items": [
                     {
                         "original_name": "GRADUATION GOWN",

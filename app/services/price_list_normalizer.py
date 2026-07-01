@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.schemas.price_list import (
     MatchedPriceListRow,
     NormalizedPriceListResponse,
+    ParsedPriceListRow,
     UnmatchedPriceListRow,
 )
 from app.services.catalog import load_item_services
@@ -47,33 +48,74 @@ async def download_source_file(file_url: str) -> tuple[bytes, str]:
     return file_bytes, suffix
 
 
-async def normalize_price_list(file_url: str) -> NormalizedPriceListResponse:
-    file_bytes, suffix = await download_source_file(file_url)
+def deduplicate_rows(rows: list[ParsedPriceListRow]) -> list[ParsedPriceListRow]:
+    seen: set[tuple[str, int]] = set()
+    deduplicated: list[ParsedPriceListRow] = []
 
-    with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as temp_file:
-        temp_file.write(file_bytes)
-        temp_file.flush()
+    for row in rows:
+        row_key = (row.original_name.lower(), row.price)
+        if row_key in seen:
+            continue
+        seen.add(row_key)
+        deduplicated.append(row)
 
-        try:
-            raw_ocr_text = extract_image_text(temp_file.name)
-        except Exception as exc:
-            raise PriceListNormalizationError(f"OCR step failed: {str(exc)}") from exc
+    return deduplicated
 
-    parsed_rows = parse_price_list_rows(raw_ocr_text)
-    if not parsed_rows:
-        try:
-            parsed_rows = parse_price_list_rows_with_llm(raw_ocr_text)
-        except Exception as exc:
+
+async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListResponse:
+    if not file_urls:
+        raise PriceListNormalizationError("At least one file URL is required.")
+
+    all_raw_ocr_texts: list[str] = []
+    all_parsed_rows: list[ParsedPriceListRow] = []
+    detected_laundry_name: str | None = None
+
+    for file_url in file_urls:
+        file_bytes, suffix = await download_source_file(file_url)
+
+        with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as temp_file:
+            temp_file.write(file_bytes)
+            temp_file.flush()
+
+            try:
+                raw_ocr_text = extract_image_text(temp_file.name)
+            except Exception as exc:
+                raise PriceListNormalizationError(
+                    f"OCR step failed for '{file_url}': {str(exc)}"
+                ) from exc
+
+        all_raw_ocr_texts.append(raw_ocr_text)
+
+        parsed_rows = parse_price_list_rows(raw_ocr_text)
+        if not parsed_rows:
+            try:
+                parsed_rows = parse_price_list_rows_with_llm(raw_ocr_text)
+            except Exception as exc:
+                raise PriceListNormalizationError(
+                    f"Could not parse price list rows from OCR text for '{file_url}'. "
+                    f"LLM fallback failed: {str(exc)}"
+                ) from exc
+
+        if not parsed_rows:
             raise PriceListNormalizationError(
-                f"Could not parse price list rows from OCR text. LLM fallback failed: {str(exc)}"
-            ) from exc
+                f"No price list rows could be extracted from uploaded image '{file_url}'."
+            )
+
+        all_parsed_rows.extend(parsed_rows)
+
+        page_laundry_name = parse_laundry_name(raw_ocr_text)
+        if page_laundry_name and not detected_laundry_name:
+            detected_laundry_name = page_laundry_name
+
+    parsed_rows = deduplicate_rows(all_parsed_rows)
 
     if not parsed_rows:
         raise PriceListNormalizationError(
-            "No price list rows could be extracted from the uploaded image."
+            "No price list rows could be extracted from the uploaded images."
         )
 
-    detected_laundry_name = parse_laundry_name(raw_ocr_text)
+    raw_ocr_text = "\n\n--- NEXT IMAGE ---\n\n".join(all_raw_ocr_texts)
+
     try:
         matching_payload = match_price_list_rows(parsed_rows, detected_laundry_name)
     except Exception as exc:
@@ -115,7 +157,7 @@ async def normalize_price_list(file_url: str) -> NormalizedPriceListResponse:
         success=True,
         laundry_name=matching_payload.laundry_name or detected_laundry_name,
         currency=settings.default_currency,
-        source_file_url=file_url,
+        source_file_urls=file_urls,
         items=matched_items,
         unmatched_items=unmatched_items,
         raw_ocr_text=raw_ocr_text,
