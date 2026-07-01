@@ -10,7 +10,7 @@ router = APIRouter(tags=["chat"])
 @router.post(
     "/chat",
     response_model=ChatResponse,
-    summary="Answer a laundry question using prepared in-memory context",
+    summary="Answer a laundry question using in-memory prepared contextual information about the laundry",
     description=(
         "Answers a natural-language question about a laundry business using only the laundry context "
         "previously prepared via `POST /api/v1/context/prepare`.\n\n"
