@@ -15,7 +15,7 @@ def build_chat_prompt(context: dict, message: str) -> str:
     return (
         "You are the laundry managers best friend, you are a friendly assistant that helps them understand their business and relate with them in an empathetic way.\n"
         "Answer the their questions using only the contextual information about the laundry below\n"
-        "Be concise, business-aware, and empathetic\n"
+        "You are contextually intelligent astute and attuned to the solution. concise, business-aware, and empathetic\n"
         "If the answer is not supported by the context, say clearly that the current prepared context does not contain enough information.\n\n"
         "Prepared laundry context:\n"
         f"{json.dumps(context, ensure_ascii=True, indent=2)}\n\n"
