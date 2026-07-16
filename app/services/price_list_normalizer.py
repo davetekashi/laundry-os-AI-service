@@ -1,8 +1,4 @@
 import tempfile
-from pathlib import Path
-from urllib.parse import urlparse
-
-import httpx
 
 from app.core.config import get_settings
 from app.schemas.price_list import (
@@ -19,33 +15,11 @@ from app.services.parser import (
     parse_price_list_rows,
     parse_price_list_rows_with_llm,
 )
+from app.services.source_image import SourceImageError, download_source_image
 
 
 class PriceListNormalizationError(Exception):
     pass
-
-
-async def download_source_file(file_url: str) -> tuple[bytes, str]:
-    try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(file_url)
-            response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise PriceListNormalizationError(f"Failed to download source file: {str(exc)}") from exc
-
-    content_type = response.headers.get("content-type", "").lower()
-    if not content_type.startswith("image/"):
-        raise PriceListNormalizationError(
-            f"Source URL must point to an image. Received content-type '{content_type or 'unknown'}'."
-        )
-
-    file_bytes = response.content
-    if not file_bytes:
-        raise PriceListNormalizationError("Downloaded source file is empty.")
-
-    parsed_url = urlparse(file_url)
-    suffix = Path(parsed_url.path).suffix or ".jpg"
-    return file_bytes, suffix
 
 
 def deduplicate_rows(rows: list[ParsedPriceListRow]) -> list[ParsedPriceListRow]:
@@ -71,7 +45,10 @@ async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListRespo
     detected_laundry_name: str | None = None
 
     for file_url in file_urls:
-        file_bytes, suffix = await download_source_file(file_url)
+        try:
+            file_bytes, suffix = await download_source_image(file_url)
+        except SourceImageError as exc:
+            raise PriceListNormalizationError(str(exc)) from exc
 
         with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as temp_file:
             temp_file.write(file_bytes)

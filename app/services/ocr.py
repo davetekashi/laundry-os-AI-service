@@ -10,7 +10,7 @@ def encode_image(file_path: str) -> str:
     return base64.b64encode(Path(file_path).read_bytes()).decode("utf-8")
 
 
-def extract_image_text(file_path: str) -> str:
+def extract_image_text(file_path: str, extraction_instruction: str | None = None) -> str:
     """
     Extract text from an image using the configured Groq vision model.
     """
@@ -27,7 +27,8 @@ def extract_image_text(file_path: str) -> str:
                     "content": [
                         {
                             "type": "text",
-                            "text": (
+                            "text": extraction_instruction
+                            or (
                                 "Perform optical character recognition on this laundry price list image. "
                                 "Return the exact text content as faithfully as possible."
                             ),
@@ -49,4 +50,3 @@ def extract_image_text(file_path: str) -> str:
         return content
     except Exception as exc:
         raise RuntimeError(f"Image OCR failed: {str(exc)}") from exc
-
