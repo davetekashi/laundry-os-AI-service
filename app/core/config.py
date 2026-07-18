@@ -9,7 +9,10 @@ class Settings(BaseModel):
     groq_api_key: str = Field(alias="GROQ_API_KEY")
     openai_api_key: str = Field(alias="OPENAI_API_KEY")
     mongodb_uri: str = Field(alias="MONGODB_URI")
-    groq_vision_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    groq_vision_model: str = Field(
+        default="qwen/qwen3.6-27b",
+        alias="GROQ_VISION_MODEL",
+    )
     openai_matching_model: str = "gpt-4.1"
     openai_chat_model: str = "gpt-4.1"
     default_currency: str = "NGN"
