@@ -43,6 +43,19 @@ class ParsedPriceListRow(BaseModel):
     )
 
 
+class ExtractedPriceListItem(BaseModel):
+    item_name: str = Field(
+        min_length=1,
+        description="Item name preserved from the laundry owner's source price list.",
+        examples=["WEDDING GOWN (BIG)"],
+    )
+    price: int = Field(
+        ge=0,
+        description="Price parsed from the laundry list in whole currency units.",
+        examples=[10000],
+    )
+
+
 class MatchedPriceListRow(ParsedPriceListRow):
     matched_item_type: str = Field(
         min_length=1,
@@ -99,11 +112,11 @@ class NormalizedPriceListResponse(BaseModel):
     source_file_urls: list[HttpUrl] = Field(
         description="Original Cloudflare image URLs used for the normalization request.",
     )
-    items: list[MatchedPriceListRow] = Field(
-        description="Successfully matched laundry items with canonical internal item types and supported services.",
-    )
-    unmatched_items: list[UnmatchedPriceListRow] = Field(
-        description="Laundry items that could not be matched safely to an internal item type.",
+    items: list[ExtractedPriceListItem] = Field(
+        description=(
+            "Item names and prices faithfully extracted from the laundry owner's source list. "
+            "Item names are not mapped to the Laundry OS canonical item taxonomy."
+        ),
     )
     raw_ocr_text: str = Field(
         description="Raw OCR text returned from the vision extraction step for debugging and audit purposes.",
@@ -121,15 +134,11 @@ class NormalizedPriceListResponse(BaseModel):
                 ],
                 "items": [
                     {
-                        "original_name": "GRADUATION GOWN",
-                        "price": 2500,
-                        "matched_item_type": "graduation gown",
-                        "confidence": 0.99,
-                        "supported_services": ["dry cleaning"],
+                        "item_name": "WEDDING GOWN (BIG)",
+                        "price": 10000,
                     }
                 ],
-                "unmatched_items": [],
-                "raw_ocr_text": "1124 LAUNDRY/DRY CLEANERS\nPRICE LIST\nGRADUATION GOWN 2,500",
+                "raw_ocr_text": "WEDDING GOWN (BIG) 10,000",
             }
         }
     }

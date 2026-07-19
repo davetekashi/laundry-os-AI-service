@@ -13,7 +13,7 @@ app = FastAPI(
     description=(
         "AI-powered endpoints for Laundry OS.\n\n"
         "This service currently supports:\n"
-        "- Laundry price list normalization from Cloudflare-hosted image URLs.\n"
+        "- Laundry price list digitization from Cloudflare-hosted image URLs.\n"
         "- Customer record extraction from one or more Cloudflare-hosted images.\n"
         "- Context preparation for a specific laundry using MongoDB-backed business data.\n"
         "- Chat responses grounded only in previously prepared in-memory laundry context.\n\n"
@@ -31,9 +31,8 @@ app = FastAPI(
         {
             "name": "price-lists",
             "description": (
-                "Endpoints for extracting OCR text from laundry price-list images, "
-                "mapping laundry-specific item labels to internal canonical item types, "
-                "and attaching the supported services for each matched internal item."
+                "Endpoints for faithfully extracting laundry-specific item names and prices "
+                "from one or more Cloudflare-hosted price-list images."
             ),
         },
         {

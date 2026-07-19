@@ -2,13 +2,10 @@ import tempfile
 
 from app.core.config import get_settings
 from app.schemas.price_list import (
-    MatchedPriceListRow,
+    ExtractedPriceListItem,
     NormalizedPriceListResponse,
     ParsedPriceListRow,
-    UnmatchedPriceListRow,
 )
-from app.services.catalog import load_item_services
-from app.services.matcher import match_price_list_rows
 from app.services.ocr import extract_image_text
 from app.services.parser import (
     parse_laundry_name,
@@ -92,50 +89,16 @@ async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListRespo
         )
 
     raw_ocr_text = "\n\n--- NEXT IMAGE ---\n\n".join(all_raw_ocr_texts)
-
-    try:
-        matching_payload = match_price_list_rows(parsed_rows, detected_laundry_name)
-    except Exception as exc:
-        raise PriceListNormalizationError(f"Item matching step failed: {str(exc)}") from exc
-    item_services = load_item_services()
     settings = get_settings()
-
-    matched_items: list[MatchedPriceListRow] = []
-    unmatched_items: list[UnmatchedPriceListRow] = []
-
-    for item in matching_payload.items:
-        if item.matched_item_type:
-            services = item_services.get(item.matched_item_type)
-            if services is None:
-                raise PriceListNormalizationError(
-                    f"Matched item type '{item.matched_item_type}' is missing service configuration."
-                )
-
-            matched_items.append(
-                MatchedPriceListRow(
-                    original_name=item.original_name,
-                    price=item.price,
-                    matched_item_type=item.matched_item_type,
-                    confidence=item.confidence,
-                    supported_services=services,
-                )
-            )
-            continue
-
-        unmatched_items.append(
-            UnmatchedPriceListRow(
-                original_name=item.original_name,
-                price=item.price,
-                reason=item.reason or "Could not confidently map item.",
-            )
-        )
 
     return NormalizedPriceListResponse(
         success=True,
-        laundry_name=matching_payload.laundry_name or detected_laundry_name,
+        laundry_name=detected_laundry_name,
         currency=settings.default_currency,
         source_file_urls=file_urls,
-        items=matched_items,
-        unmatched_items=unmatched_items,
+        items=[
+            ExtractedPriceListItem(item_name=row.original_name, price=row.price)
+            for row in parsed_rows
+        ],
         raw_ocr_text=raw_ocr_text,
     )

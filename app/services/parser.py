@@ -18,13 +18,12 @@ def clean_item_name(value: str) -> str:
 
 def parse_laundry_name(raw_ocr_text: str) -> str | None:
     lines = [line.strip() for line in raw_ocr_text.splitlines() if line.strip()]
-    for line in lines:
-        upper_line = line.upper()
-        if "PRICE LIST" in upper_line:
+    for index, line in enumerate(lines):
+        if "PRICE LIST" not in line.upper():
             continue
-        if "ITEM" in upper_line and "AMOUNT" in upper_line:
-            continue
-        return line
+        if index > 0:
+            return lines[index - 1]
+        return None
     return None
 
 

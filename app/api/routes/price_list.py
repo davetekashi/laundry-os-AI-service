@@ -10,17 +10,16 @@ router = APIRouter(tags=["price-lists"])
 @router.post(
     "/price-lists/normalize",
     response_model=NormalizedPriceListResponse,
-    summary="Normalize a laundry price list image into internal item types",
+    summary="Digitize item names and prices from a laundry price list",
     description=(
         "Accepts one or more Cloudflare-hosted image URLs for a laundry price list, performs OCR on each image, "
-        "extracts item/price rows, maps each source item label to an internal canonical item type, "
-        "and returns supported services for each matched item.\n\n"
-        "Use this endpoint when a laundry uploads its own custom price list and the platform needs to "
-        "normalize it into the shared Laundry OS item taxonomy."
+        "and returns the item names and prices found in the source list. Item names are preserved as supplied "
+        "by the laundry owner and are not mapped to predefined Laundry OS item types.\n\n"
+        "Use this endpoint to digitize a laundry owner's existing paper or image-based price list."
     ),
     responses={
         400: {
-            "description": "Client-side normalization error such as download, OCR, parsing, or matching failure.",
+            "description": "Client-side processing error such as download, OCR, or row-parsing failure.",
             "content": {
                 "application/json": {
                     "example": {
