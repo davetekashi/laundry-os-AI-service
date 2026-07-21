@@ -49,11 +49,27 @@ class ExtractedPriceListItem(BaseModel):
         description="Item name preserved from the laundry owner's source price list.",
         examples=["WEDDING GOWN (BIG)"],
     )
-    price: int = Field(
+    price: int | None = Field(
+        default=None,
         ge=0,
-        description="Price parsed from the laundry list in whole currency units.",
+        description=(
+            "Numeric price when the source contains one unambiguous amount; otherwise null."
+        ),
         examples=[10000],
     )
+    price_text: str = Field(
+        min_length=1,
+        description=(
+            "Price exactly as represented in the source, including multiple values or non-numeric markers."
+        ),
+        examples=["800 / 700"],
+    )
+
+
+class PriceListImageExtraction(BaseModel):
+    laundry_name: str | None
+    raw_ocr_text: str = Field(min_length=1)
+    items: list[ExtractedPriceListItem]
 
 
 class MatchedPriceListRow(ParsedPriceListRow):
@@ -134,8 +150,9 @@ class NormalizedPriceListResponse(BaseModel):
                 ],
                 "items": [
                     {
-                        "item_name": "WEDDING GOWN (BIG)",
-                        "price": 10000,
+                        "item_name": "SKIRT LONG / SHORT",
+                        "price": None,
+                        "price_text": "800 / 700",
                     }
                 ],
                 "raw_ocr_text": "WEDDING GOWN (BIG) 10,000",

@@ -4,13 +4,10 @@ from app.core.config import get_settings
 from app.schemas.price_list import (
     ExtractedPriceListItem,
     NormalizedPriceListResponse,
-    ParsedPriceListRow,
 )
-from app.services.ocr import extract_image_text
+from app.services.openai_price_list_extractor import extract_price_list_image
 from app.services.parser import (
-    parse_laundry_name,
-    parse_price_list_rows,
-    parse_price_list_rows_with_llm,
+    has_sufficient_extraction_coverage,
 )
 from app.services.source_image import SourceImageError, download_source_image
 
@@ -19,18 +16,8 @@ class PriceListNormalizationError(Exception):
     pass
 
 
-def deduplicate_rows(rows: list[ParsedPriceListRow]) -> list[ParsedPriceListRow]:
-    seen: set[tuple[str, int]] = set()
-    deduplicated: list[ParsedPriceListRow] = []
-
-    for row in rows:
-        row_key = (row.original_name.lower(), row.price)
-        if row_key in seen:
-            continue
-        seen.add(row_key)
-        deduplicated.append(row)
-
-    return deduplicated
+def row_identity(row: ExtractedPriceListItem) -> tuple[str, str]:
+    return row.item_name.casefold(), row.price_text.casefold()
 
 
 async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListResponse:
@@ -38,7 +25,8 @@ async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListRespo
         raise PriceListNormalizationError("At least one file URL is required.")
 
     all_raw_ocr_texts: list[str] = []
-    all_parsed_rows: list[ParsedPriceListRow] = []
+    all_parsed_rows: list[ExtractedPriceListItem] = []
+    previous_page_rows: set[tuple[str, str]] = set()
     detected_laundry_name: str | None = None
 
     for file_url in file_urls:
@@ -52,38 +40,34 @@ async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListRespo
             temp_file.flush()
 
             try:
-                raw_ocr_text = extract_image_text(temp_file.name)
+                extraction = extract_price_list_image(temp_file.name)
             except Exception as exc:
                 raise PriceListNormalizationError(
-                    f"OCR step failed for '{file_url}': {str(exc)}"
+                    f"OpenAI image extraction failed for '{file_url}': {str(exc)}"
                 ) from exc
 
+        raw_ocr_text = extraction.raw_ocr_text
         all_raw_ocr_texts.append(raw_ocr_text)
+        parsed_rows = extraction.items
 
-        parsed_rows = parse_price_list_rows(raw_ocr_text)
-        if not parsed_rows:
-            try:
-                parsed_rows = parse_price_list_rows_with_llm(raw_ocr_text)
-            except Exception as exc:
-                raise PriceListNormalizationError(
-                    f"Could not parse price list rows from OCR text for '{file_url}'. "
-                    f"LLM fallback failed: {str(exc)}"
-                ) from exc
-
-        if not parsed_rows:
+        if not has_sufficient_extraction_coverage(raw_ocr_text, parsed_rows):
             raise PriceListNormalizationError(
-                f"No price list rows could be extracted from uploaded image '{file_url}'."
+                f"Price list extraction was incomplete for '{file_url}'. "
+                "The image contains substantially more price records than were structured; "
+                "please retry with a clearer image."
             )
 
-        all_parsed_rows.extend(parsed_rows)
+        # Preserve duplicate rows printed on one page, but remove overlap from later images.
+        all_parsed_rows.extend(
+            row for row in parsed_rows if row_identity(row) not in previous_page_rows
+        )
+        previous_page_rows.update(row_identity(row) for row in parsed_rows)
 
-        page_laundry_name = parse_laundry_name(raw_ocr_text)
+        page_laundry_name = extraction.laundry_name
         if page_laundry_name and not detected_laundry_name:
             detected_laundry_name = page_laundry_name
 
-    parsed_rows = deduplicate_rows(all_parsed_rows)
-
-    if not parsed_rows:
+    if not all_parsed_rows:
         raise PriceListNormalizationError(
             "No price list rows could be extracted from the uploaded images."
         )
@@ -97,8 +81,12 @@ async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListRespo
         currency=settings.default_currency,
         source_file_urls=file_urls,
         items=[
-            ExtractedPriceListItem(item_name=row.original_name, price=row.price)
-            for row in parsed_rows
+            ExtractedPriceListItem(
+                item_name=row.item_name,
+                price=row.price,
+                price_text=row.price_text,
+            )
+            for row in all_parsed_rows
         ],
         raw_ocr_text=raw_ocr_text,
     )

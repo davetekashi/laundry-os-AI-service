@@ -14,7 +14,8 @@ router = APIRouter(tags=["price-lists"])
     description=(
         "Accepts one or more Cloudflare-hosted image URLs for a laundry price list, performs OCR on each image, "
         "and returns the item names and prices found in the source list. Item names are preserved as supplied "
-        "by the laundry owner and are not mapped to predefined Laundry OS item types.\n\n"
+        "by the laundry owner and are not mapped to predefined Laundry OS item types. Each item includes the "
+        "original `price_text`; `price` is null when the source contains multiple or non-numeric values.\n\n"
         "Use this endpoint to digitize a laundry owner's existing paper or image-based price list."
     ),
     responses={

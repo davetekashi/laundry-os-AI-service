@@ -6,12 +6,11 @@ from pydantic import BaseModel, Field
 
 
 class Settings(BaseModel):
-    groq_api_key: str = Field(alias="GROQ_API_KEY")
     openai_api_key: str = Field(alias="OPENAI_API_KEY")
     mongodb_uri: str = Field(alias="MONGODB_URI")
-    groq_vision_model: str = Field(
-        default="qwen/qwen3.6-27b",
-        alias="GROQ_VISION_MODEL",
+    openai_vision_model: str = Field(
+        default="gpt-4.1",
+        alias="OPENAI_VISION_MODEL",
     )
     openai_matching_model: str = "gpt-4.1"
     openai_chat_model: str = "gpt-4.1"
