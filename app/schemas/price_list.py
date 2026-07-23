@@ -1,4 +1,18 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, HttpUrl, model_validator
+
+
+LaundryService = Literal[
+    "washing",
+    "ironing",
+    "washing and ironing",
+    "dry cleaning",
+    "shoe cleaning",
+    "curtain cleaning",
+    "rug / carpet cleaning",
+    "upholstery cleaning",
+]
 
 
 class NormalizePriceListRequest(BaseModel):
@@ -64,6 +78,27 @@ class ExtractedPriceListItem(BaseModel):
         ),
         examples=["800 / 700"],
     )
+    services: list[LaundryService] = Field(
+        default_factory=list,
+        description=(
+            "Supported platform services inferred through the internal item taxonomy. "
+            "Empty when the item cannot be classified confidently."
+        ),
+        examples=[["washing", "ironing", "washing and ironing", "dry cleaning"]],
+    )
+
+
+class PriceListVisionItem(BaseModel):
+    item_name: str
+    price: int | None
+    price_text: str
+    service_reference_item: str | None
+
+
+class PriceListVisionExtraction(BaseModel):
+    laundry_name: str | None
+    raw_ocr_text: str = Field(min_length=1)
+    items: list[PriceListVisionItem]
 
 
 class PriceListImageExtraction(BaseModel):
@@ -153,6 +188,12 @@ class NormalizedPriceListResponse(BaseModel):
                         "item_name": "SKIRT LONG / SHORT",
                         "price": None,
                         "price_text": "800 / 700",
+                        "services": [
+                            "washing",
+                            "ironing",
+                            "washing and ironing",
+                            "dry cleaning",
+                        ],
                     }
                 ],
                 "raw_ocr_text": "WEDDING GOWN (BIG) 10,000",

@@ -85,6 +85,7 @@ async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListRespo
                 item_name=row.item_name,
                 price=row.price,
                 price_text=row.price_text,
+                services=row.services,
             )
             for row in all_parsed_rows
         ],

@@ -1,48 +1,23 @@
 import base64
+import json
 import mimetypes
 from pathlib import Path
 
 from openai import OpenAI
 
 from app.core.config import get_settings
-from app.schemas.price_list import ExtractedPriceListItem, PriceListImageExtraction
+from app.schemas.price_list import (
+    ExtractedPriceListItem,
+    PriceListImageExtraction,
+    PriceListVisionExtraction,
+)
+from app.services.catalog import load_item_services
 from app.services.parser import (
     clean_item_name,
     clean_ocr_text,
     is_valid_item_name,
     parse_single_numeric_price,
 )
-
-
-PRICE_LIST_RESPONSE_FORMAT = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "laundry_price_list_extraction",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "laundry_name": {"type": ["string", "null"]},
-                "raw_ocr_text": {"type": "string"},
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "item_name": {"type": "string"},
-                            "price": {"type": ["integer", "null"]},
-                            "price_text": {"type": "string"},
-                        },
-                        "required": ["item_name", "price", "price_text"],
-                        "additionalProperties": False,
-                    },
-                },
-            },
-            "required": ["laundry_name", "raw_ocr_text", "items"],
-            "additionalProperties": False,
-        },
-    },
-}
 
 
 PRICE_LIST_EXTRACTION_PROMPT = """
@@ -59,9 +34,55 @@ Requirements:
 - Keep separately printed duplicate records, including similar records in male and female columns.
 - Ignore headings, addresses, phone numbers, emails, slogans, and table labels as item records.
 - Do not invent, rename, categorize, normalize, combine, or match items.
+- For each record, choose service_reference_item only from the supplied internal service mapping.
+- service_reference_item is used only for service lookup; it must never alter item_name.
+- Choose the closest reference only when the item type is clear, including Nigerian native-wear wording and obvious size, gender, starch, fold, complete/set, or service modifiers.
+- Examples: COMPLETE AGBADA refers to agbada; WOKO COMPLETE refers to woko; TIE DRYCLEANING refers to tie; SHIRT (LIGHT STARCH) & FOLD refers to a shirt.
+- Return service_reference_item as null when the item is unfamiliar or cannot be classified confidently. Never guess a reference merely to avoid null.
 - raw_ocr_text must be a faithful transcription only. Do not include analysis, reasoning, row numbers, line labels, markdown commentary, or <think> content.
 - Return the laundry/business name only when it is visibly identifiable; otherwise return null.
 """.strip()
+
+
+def build_response_format(canonical_items: list[str]) -> dict:
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "laundry_price_list_extraction",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "laundry_name": {"type": ["string", "null"]},
+                    "raw_ocr_text": {"type": "string"},
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "item_name": {"type": "string"},
+                                "price": {"type": ["integer", "null"]},
+                                "price_text": {"type": "string"},
+                                "service_reference_item": {
+                                    "type": ["string", "null"],
+                                    "enum": [*canonical_items, None],
+                                },
+                            },
+                            "required": [
+                                "item_name",
+                                "price",
+                                "price_text",
+                                "service_reference_item",
+                            ],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["laundry_name", "raw_ocr_text", "items"],
+                "additionalProperties": False,
+            },
+        },
+    }
 
 
 def encode_image(file_path: str) -> str:
@@ -72,10 +93,17 @@ def extract_price_list_image(file_path: str) -> PriceListImageExtraction:
     settings = get_settings()
     client = OpenAI(api_key=settings.openai_api_key)
     media_type = mimetypes.guess_type(file_path)[0] or "image/jpeg"
+    item_services = load_item_services()
+    service_mapping = json.dumps(item_services, ensure_ascii=True, separators=(",", ":"))
+    prompt = (
+        f"{PRICE_LIST_EXTRACTION_PROMPT}\n\n"
+        "INTERNAL SERVICE MAPPING (reference item -> supported services):\n"
+        f"{service_mapping}"
+    )
 
     response = client.chat.completions.create(
         model=settings.openai_vision_model,
-        response_format=PRICE_LIST_RESPONSE_FORMAT,
+        response_format=build_response_format(list(item_services)),
         max_completion_tokens=16384,
         temperature=0,
         messages=[
@@ -88,7 +116,7 @@ def extract_price_list_image(file_path: str) -> PriceListImageExtraction:
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": PRICE_LIST_EXTRACTION_PROMPT},
+                    {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
                         "image_url": {
@@ -105,7 +133,7 @@ def extract_price_list_image(file_path: str) -> PriceListImageExtraction:
     if not content:
         raise RuntimeError("OpenAI price-list extraction returned an empty response.")
 
-    payload = PriceListImageExtraction.model_validate_json(content)
+    payload = PriceListVisionExtraction.model_validate_json(content)
     cleaned_items: list[ExtractedPriceListItem] = []
 
     for item in payload.items:
@@ -119,6 +147,7 @@ def extract_price_list_image(file_path: str) -> PriceListImageExtraction:
                 item_name=item_name,
                 price=parse_single_numeric_price(price_text),
                 price_text=price_text,
+                services=item_services.get(item.service_reference_item or "", []),
             )
         )
 
