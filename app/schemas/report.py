@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from enum import StrEnum
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class WeeklySummaryReportRequest(BaseModel):
@@ -138,6 +140,108 @@ class DebtRiskAnalysisResponse(BaseModel):
                         ["Jane Smith", "NGN 12,500", "4 days outstanding"],
                     ],
                 },
+            }
+        }
+    }
+
+
+class ReportEntity(StrEnum):
+    LAUNDRY = "laundry"
+    BANK_ACCOUNT = "bank_account"
+    CUSTOMERS = "customers"
+    DEBTS = "debts"
+    MEMBERS = "members"
+    WALLET = "wallet"
+    LOGISTICS = "logistics"
+    PAYMENTS = "payments"
+    ORDERS = "orders"
+
+
+class ReportFileFormat(StrEnum):
+    PDF = "pdf"
+    XLSX = "xlsx"
+
+
+SNAPSHOT_REPORT_ENTITIES = {
+    ReportEntity.LAUNDRY,
+    ReportEntity.BANK_ACCOUNT,
+    ReportEntity.WALLET,
+}
+
+
+class GenerateReportRequest(BaseModel):
+    laundry_id: str = Field(
+        min_length=1,
+        description="MongoDB ObjectId of the laundry that owns the requested report data.",
+        examples=["6a18a4e625addd1b6e2406b7"],
+    )
+    entity: ReportEntity = Field(
+        description="Business entity to report on. Arbitrary MongoDB collection names are not accepted.",
+        examples=["orders"],
+    )
+    start_date: datetime | None = Field(
+        default=None,
+        description="Inclusive ISO 8601 start. Required for historical entities and omitted for snapshots.",
+        examples=["2026-07-01T00:00:00Z"],
+    )
+    end_date: datetime | None = Field(
+        default=None,
+        description="Inclusive ISO 8601 end. Required for historical entities and omitted for snapshots.",
+        examples=["2026-07-23T23:59:59Z"],
+    )
+    format: ReportFileFormat = Field(
+        description="Output file format.",
+        examples=["pdf"],
+    )
+
+    @model_validator(mode="after")
+    def validate_report_window(self):
+        if self.entity not in SNAPSHOT_REPORT_ENTITIES:
+            if self.start_date is None or self.end_date is None:
+                raise ValueError(
+                    "start_date and end_date are required for this report entity."
+                )
+        if (self.start_date is None) != (self.end_date is None):
+            raise ValueError("start_date and end_date must be provided together.")
+        if self.start_date and self.end_date and self.end_date <= self.start_date:
+            raise ValueError("end_date must be greater than start_date.")
+        return self
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "laundry_id": "6a18a4e625addd1b6e2406b7",
+                    "entity": "orders",
+                    "start_date": "2026-07-01T00:00:00Z",
+                    "end_date": "2026-07-23T23:59:59Z",
+                    "format": "pdf",
+                },
+                {
+                    "laundry_id": "6a18a4e625addd1b6e2406b7",
+                    "entity": "wallet",
+                    "format": "xlsx",
+                },
+            ]
+        }
+    }
+
+
+class GenerateReportResponse(BaseModel):
+    success: bool = True
+    filename: str = Field(description="Human-readable generated filename.")
+    object_key: str = Field(description="Cloudflare R2 object key used to store the report.")
+    download_url: str = Field(
+        description="Temporary presigned URL that the frontend can use to download the private report."
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "success": True,
+                "filename": "royalty_orders_2026-07-01_to_2026-07-23.pdf",
+                "object_key": "reports/6a18a4e625addd1b6e2406b7/orders/2026/07/uuid.pdf",
+                "download_url": "https://example.r2.cloudflarestorage.com/...",
             }
         }
     }

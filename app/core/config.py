@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 class Settings(BaseModel):
     openai_api_key: str = Field(alias="OPENAI_API_KEY")
     mongodb_uri: str = Field(alias="MONGODB_URI")
+    r2_access_key_id: str = Field(alias="R2_ACCESS_KEY_ID")
+    r2_secret_access_key: str = Field(alias="R2_SECRET_ACCESS_KEY")
+    r2_endpoint: str = Field(alias="R2_ENDPOINT")
+    r2_bucket_name: str = Field(alias="R2_BUCKET_NAME")
     openai_vision_model: str = Field(
         default="gpt-4.1",
         alias="OPENAI_VISION_MODEL",
@@ -15,6 +19,7 @@ class Settings(BaseModel):
     openai_matching_model: str = "gpt-4.1"
     openai_chat_model: str = "gpt-4.1"
     default_currency: str = "NGN"
+    report_download_url_expiry_seconds: int = 3600
 
 
 def load_dotenv_values() -> dict[str, str]:
