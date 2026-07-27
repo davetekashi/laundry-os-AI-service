@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, Body, HTTPException
 
 from app.schemas.customer import CustomerExtractionResponse, ExtractCustomersRequest
 from app.services.customer_extractor import CustomerExtractionError, extract_customers
@@ -43,7 +45,33 @@ router = APIRouter(tags=["customers"])
     },
 )
 async def extract_customers_endpoint(
-    payload: ExtractCustomersRequest,
+    payload: Annotated[
+        ExtractCustomersRequest,
+        Body(
+            openapi_examples={
+                "single_image": {
+                    "summary": "One customer-list image",
+                    "description": "Use a string when the customer list is contained in one image.",
+                    "value": {
+                        "file_url": "https://imagedelivery.net/account-id/customer-list-1/public"
+                    },
+                },
+                "multiple_images": {
+                    "summary": "Multiple customer-list images",
+                    "description": (
+                        "Use an array under the same `file_url` field when the customer list "
+                        "spans multiple images."
+                    ),
+                    "value": {
+                        "file_url": [
+                            "https://imagedelivery.net/account-id/customer-list-1/public",
+                            "https://imagedelivery.net/account-id/customer-list-2/public",
+                        ]
+                    },
+                },
+            }
+        ),
+    ],
 ) -> CustomerExtractionResponse:
     try:
         return await extract_customers(

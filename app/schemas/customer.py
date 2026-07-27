@@ -7,7 +7,13 @@ class ExtractCustomersRequest(BaseModel):
             "Cloudflare-accessible customer-list image URL or array of image URLs. "
             "Use an array when the customer list spans multiple images."
         ),
-        examples=["https://imagedelivery.net/account-id/customer-list-1/public"],
+        examples=[
+            "https://imagedelivery.net/account-id/customer-list-1/public",
+            [
+                "https://imagedelivery.net/account-id/customer-list-1/public",
+                "https://imagedelivery.net/account-id/customer-list-2/public",
+            ],
+        ],
     )
 
     @model_validator(mode="after")
