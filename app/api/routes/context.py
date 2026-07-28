@@ -15,11 +15,16 @@ router = APIRouter(tags=["context"])
     response_model=PrepareContextResponse,
     summary="Prepare and cache sanitized AI context for a laundry",
     description=(
-        "Builds sanitized, AI-ready business context for a specific laundry and stores it in memory. "
+        "Builds sanitized, role-scoped AI-ready business context for a specific laundry and stores it in memory. "
         "This endpoint is intended to be triggered by the backend when a laundry user logs in so that "
         "subsequent chat calls can be faster.\n\n"
-        "The prepared context includes summarized data derived from laundries, bank accounts, wallets, "
-        "customers, debts, members, customer payments, orders, and logistics job records.\n\n"
+        "Send `role` as either `owner` or `staff`. The backend must derive this value from the authenticated "
+        "user and must not accept a user-selected role. Owner context includes operational, collection, debt, "
+        "wallet, expense, settlement and reconciliation information. Staff context contains only operational "
+        "laundry, customer, member, order, logistics and catalog information. Staff payment visibility is limited "
+        "to the order-level payment status already present on orders; order payment events and amounts are not fetched.\n\n"
+        "Owner and staff snapshots are cached separately using the laundry id and role. The subsequent `/chat` "
+        "request must provide the same role.\n\n"
         "Important: prepared context is stored in memory only and is cleared whenever this service restarts."
     ),
     responses={
@@ -43,7 +48,7 @@ router = APIRouter(tags=["context"])
 )
 def prepare_context_endpoint(payload: PrepareContextRequest) -> PrepareContextResponse:
     try:
-        return prepare_laundry_context(payload.laundry_id)
+        return prepare_laundry_context(payload.laundry_id, payload.role)
     except ContextPreparationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

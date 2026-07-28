@@ -155,6 +155,13 @@ class ReportEntity(StrEnum):
     LOGISTICS = "logistics"
     PAYMENTS = "payments"
     ORDERS = "orders"
+    EXPENSES = "expenses"
+    PROFITABILITY = "profitability"
+    SETTLEMENTS = "settlements"
+    WALLET_TRANSACTIONS = "wallet_transactions"
+    SERVICES = "services"
+    ITEMS = "items"
+    FINANCIAL_RECONCILIATION = "financial_reconciliation"
 
 
 class ReportFileFormat(StrEnum):

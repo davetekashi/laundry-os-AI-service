@@ -2,11 +2,23 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
+from app.schemas.context import ContextRole
+
 
 def isoformat_or_none(value: Any) -> str | None:
     if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
         return value.astimezone(UTC).isoformat()
     return None
+
+
+def datetime_sort_key(value: Any) -> float:
+    if not isinstance(value, datetime):
+        return float("-inf")
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.timestamp()
 
 
 def mask_account_number(account_number: str | None) -> str | None:
@@ -83,7 +95,9 @@ def build_customer_summary(customers: list[dict]) -> dict:
     )
     recent_customers = sorted(
         customers,
-        key=lambda customer: customer.get("lastOrderAt") or customer.get("createdAt") or datetime.min.replace(tzinfo=UTC),
+        key=lambda customer: datetime_sort_key(
+            customer.get("lastOrderAt") or customer.get("createdAt")
+        ),
         reverse=True,
     )[:5]
 
@@ -116,7 +130,9 @@ def build_member_summary(members: list[dict]) -> dict:
 
     recent_members = sorted(
         members,
-        key=lambda member: member.get("lastLoginAt") or member.get("createdAt") or datetime.min.replace(tzinfo=UTC),
+        key=lambda member: datetime_sort_key(
+            member.get("lastLoginAt") or member.get("createdAt")
+        ),
         reverse=True,
     )[:5]
 
@@ -184,7 +200,9 @@ def build_payment_summary(payments: list[dict]) -> dict:
 
     recent_payments = sorted(
         payments,
-        key=lambda payment: payment.get("paidAt") or payment.get("createdAt") or datetime.min.replace(tzinfo=UTC),
+        key=lambda payment: datetime_sort_key(
+            payment.get("paidAt") or payment.get("createdAt")
+        ),
         reverse=True,
     )[:5]
 
@@ -278,25 +296,387 @@ def build_logistics_summary(logistics_jobs: list[dict], orders: list[dict]) -> d
     }
 
 
-def build_context_summary(raw_context: dict) -> dict:
+def build_staff_laundry_summary(laundry: dict) -> dict:
+    return {
+        "laundry_name": laundry.get("laundryName"),
+        "laundry_code": laundry.get("laundryCode"),
+        "slug": laundry.get("slug"),
+        "state": laundry.get("state"),
+        "country": laundry.get("country"),
+        "status": laundry.get("status"),
+        "is_active": laundry.get("isActive"),
+        "is_paused": laundry.get("isPaused"),
+    }
+
+
+def build_workspace_summary(settings: dict | None) -> dict:
+    settings = settings or {}
+    operations = settings.get("operations") or {}
+    return {
+        "default_turnaround_days": operations.get("defaultTurnaroundDays"),
+        "operating_hours": operations.get("operatingHours"),
+        "pickup_enabled": operations.get("pickupEnabled"),
+        "delivery_enabled": operations.get("deliveryEnabled"),
+        "notifications_configured": bool(settings.get("notifications")),
+    }
+
+
+def build_staff_customer_summary(customers: list[dict]) -> dict:
+    active_count = sum(1 for customer in customers if customer.get("isActive"))
+    recent_customers = sorted(
+        customers,
+        key=lambda customer: datetime_sort_key(
+            customer.get("lastOrderAt") or customer.get("createdAt")
+        ),
+        reverse=True,
+    )[:5]
+    return {
+        "total_customers": len(customers),
+        "active_customers": active_count,
+        "inactive_customers": len(customers) - active_count,
+        "recent_customers": [
+            {
+                "full_name": " ".join(
+                    str(part)
+                    for part in (customer.get("firstName"), customer.get("lastName"))
+                    if part
+                ).strip(),
+                "phone_number": customer.get("phoneNumber"),
+                "email": customer.get("email"),
+                "last_order_at": isoformat_or_none(customer.get("lastOrderAt")),
+            }
+            for customer in recent_customers
+        ],
+    }
+
+
+def build_staff_order_summary(orders: list[dict]) -> dict:
+    order_status_counts = Counter(order.get("orderStatus", "unknown") for order in orders)
+    payment_status_counts = Counter(
+        order.get("paymentStatus", "unknown") for order in orders
+    )
+    service_mode_counts = Counter(
+        (order.get("fulfillmentInfo") or {}).get("serviceMode", "unknown")
+        for order in orders
+    )
+    recent_orders = sorted(
+        orders,
+        key=lambda order: datetime_sort_key(order.get("createdAt")),
+        reverse=True,
+    )[:10]
+    return {
+        "total_orders": len(orders),
+        "item_volume": sum(int(order.get("itemCount", 0) or 0) for order in orders),
+        "order_status_counts": dict(order_status_counts),
+        "payment_status_counts": dict(payment_status_counts),
+        "service_mode_counts": dict(service_mode_counts),
+        "pickup_completed_count": sum(1 for order in orders if order.get("pickupCompleted")),
+        "return_completed_count": sum(1 for order in orders if order.get("returnCompleted")),
+        "recent_orders": [
+            {
+                "order_code": order.get("orderCode"),
+                "order_number": order.get("orderNumber"),
+                "customer_name": (order.get("customerSnapshot") or {}).get("fullName"),
+                "item_count": order.get("itemCount", 0),
+                "order_status": order.get("orderStatus"),
+                "payment_status": order.get("paymentStatus"),
+                "created_at": isoformat_or_none(order.get("createdAt")),
+            }
+            for order in recent_orders
+        ],
+    }
+
+
+def build_operational_logistics_summary(
+    logistics_jobs: list[dict],
+    dispatches: list[dict],
+    drivers: list[dict],
+) -> dict:
+    recent_jobs = sorted(
+        logistics_jobs,
+        key=lambda job: datetime_sort_key(job.get("createdAt")),
+        reverse=True,
+    )[:10]
+    return {
+        "total_logistics_jobs": len(logistics_jobs),
+        "job_status_counts": dict(
+            Counter(job.get("status", "unknown") for job in logistics_jobs)
+        ),
+        "total_dispatches": len(dispatches),
+        "dispatch_status_counts": dict(
+            Counter(dispatch.get("status", "unknown") for dispatch in dispatches)
+        ),
+        "total_drivers": len(drivers),
+        "active_drivers": sum(1 for driver in drivers if driver.get("isActive")),
+        "recent_jobs": [
+            {
+                "job_id": str(job.get("_id")) if job.get("_id") else None,
+                "order_id": str(job.get("orderId")) if job.get("orderId") else None,
+                "type": job.get("jobType") or job.get("type"),
+                "status": job.get("status"),
+                "scheduled_at": isoformat_or_none(job.get("scheduledAt")),
+                "created_at": isoformat_or_none(job.get("createdAt")),
+            }
+            for job in recent_jobs
+        ],
+    }
+
+
+def _payment_date(payment: dict) -> Any:
+    return (
+        payment.get("paidAt")
+        or payment.get("confirmedAt")
+        or payment.get("recordedAt")
+        or payment.get("createdAt")
+    )
+
+
+def build_order_payment_summary(payments: list[dict]) -> dict:
+    confirmed_statuses = {"confirmed", "completed", "paid", "success", "successful"}
+    confirmed = [
+        payment
+        for payment in payments
+        if str(payment.get("status") or "").lower() in confirmed_statuses
+    ]
+    recent = sorted(
+        payments,
+        key=lambda payment: datetime_sort_key(_payment_date(payment)),
+        reverse=True,
+    )[:5]
+    return {
+        "total_payment_events": len(payments),
+        "confirmed_payment_events": len(confirmed),
+        "confirmed_collection_total": sum_numbers(confirmed, "amount"),
+        "service_collection_total": sum_numbers(confirmed, "serviceAmount"),
+        "delivery_collection_total": sum_numbers(confirmed, "deliveryAmount"),
+        "status_counts": dict(Counter(payment.get("status", "unknown") for payment in payments)),
+        "method_counts": dict(
+            Counter(
+                payment.get("offlineMethod")
+                or payment.get("paymentChannel")
+                or payment.get("method")
+                or "unknown"
+                for payment in confirmed
+            )
+        ),
+        "recent_payments": [
+            {
+                "customer_name": (
+                    (payment.get("payerSnapshot") or {}).get("fullName")
+                    or (payment.get("customerSnapshot") or {}).get("fullName")
+                ),
+                "amount": payment.get("amount", 0),
+                "status": payment.get("status"),
+                "method": payment.get("offlineMethod")
+                or payment.get("paymentChannel")
+                or payment.get("method"),
+                "payment_date": isoformat_or_none(_payment_date(payment)),
+            }
+            for payment in recent
+        ],
+    }
+
+
+def build_reconciliation_summary(
+    customer_payments: list[dict],
+    allocations: list[dict],
+    ledger_entries: list[dict],
+) -> dict:
+    return {
+        "customer_receipt_count": len(customer_payments),
+        "customer_receipt_total": sum_numbers(customer_payments, "totalAmount"),
+        "allocation_count": len(allocations),
+        "allocated_total": sum_numbers(allocations, "amount"),
+        "ledger_entry_count": len(ledger_entries),
+        "ledger_credit_total": sum(
+            float(entry.get("amount", 0) or 0)
+            for entry in ledger_entries
+            if str(entry.get("direction") or "").lower() == "credit"
+        ),
+        "ledger_debit_total": sum(
+            float(entry.get("amount", 0) or 0)
+            for entry in ledger_entries
+            if str(entry.get("direction") or "").lower() == "debit"
+        ),
+        "accounting_note": (
+            "Payment, receipt, allocation and ledger totals are stages of the same money flow "
+            "and must not be added together."
+        ),
+    }
+
+
+def build_wallet_activity_summary(transactions: list[dict]) -> dict:
+    credits = sum(
+        float(row.get("amount", 0) or 0)
+        for row in transactions
+        if str(row.get("direction") or "").lower() == "credit"
+    )
+    debits = sum(
+        float(row.get("amount", 0) or 0)
+        for row in transactions
+        if str(row.get("direction") or "").lower() == "debit"
+    )
+    return {
+        "transaction_count": len(transactions),
+        "credit_total": credits,
+        "debit_total": debits,
+        "net_movement": credits - debits,
+        "type_counts": dict(Counter(row.get("type", "unknown") for row in transactions)),
+    }
+
+
+def build_expense_summary(monthly_expenses: list[dict]) -> dict:
+    category_totals: dict[str, float] = defaultdict(float)
+    entry_count = 0
+    for document in monthly_expenses:
+        for entry in document.get("entries") or []:
+            entry_count += 1
+            category_totals[str(entry.get("category") or "Uncategorized")] += float(
+                entry.get("amount", 0) or 0
+            )
+    return {
+        "months_recorded": len(monthly_expenses),
+        "expense_entry_count": entry_count,
+        "recorded_expense_total": sum_numbers(monthly_expenses, "totalExpenses"),
+        "category_totals": dict(category_totals),
+    }
+
+
+def build_settlement_summary(settlements: list[dict]) -> dict:
+    completed_statuses = {"completed", "successful", "paid"}
+    completed = [
+        settlement
+        for settlement in settlements
+        if str(settlement.get("status") or "").lower() in completed_statuses
+    ]
+    return {
+        "settlement_count": len(settlements),
+        "requested_total": sum_numbers(settlements, "amount"),
+        "completed_total": sum_numbers(completed, "amount"),
+        "status_counts": dict(
+            Counter(settlement.get("status", "unknown") for settlement in settlements)
+        ),
+    }
+
+
+def build_catalog_summary(raw_context: dict) -> dict:
+    global_services = {
+        service.get("_id"): service.get("name") or service.get("slug")
+        for service in raw_context.get("global_services", [])
+    }
+    global_types = {
+        item_type.get("_id"): item_type.get("name")
+        for item_type in raw_context.get("global_item_types", [])
+    }
+    item_prices = raw_context.get("item_prices", [])
+    return {
+        "configured_service_count": len(raw_context.get("laundry_services", [])),
+        "configured_item_count": len(item_prices),
+        "active_add_on_count": sum(
+            1 for add_on in raw_context.get("add_on_services", []) if add_on.get("isActive")
+        ),
+        "services": sorted(
+            {
+                str(global_services.get(service.get("service")))
+                for service in raw_context.get("laundry_services", [])
+                if global_services.get(service.get("service"))
+            }
+        ),
+        "items": [
+            {
+                "name": item.get("itemName")
+                or item.get("normalizedItemName")
+                or global_types.get(item.get("itemType")),
+                "service": global_services.get(item.get("service")),
+                "price": item.get("price"),
+                "active": item.get("isActive"),
+            }
+            for item in item_prices[:100]
+        ],
+        "catalog_note": "Item prices are operational selling prices, not revenue or collected income.",
+    }
+
+
+def build_subscription_summary(intents: list[dict]) -> dict:
+    latest = max(
+        intents,
+        key=lambda intent: datetime_sort_key(intent.get("createdAt")),
+        default={},
+    )
+    return {
+        "intent_count": len(intents),
+        "latest_target_plan": latest.get("targetPlan"),
+        "latest_intent_type": latest.get("intentType"),
+        "latest_status": latest.get("status"),
+    }
+
+
+def build_context_summary(raw_context: dict, role: ContextRole) -> dict:
     laundry = raw_context["laundry"]
-    bank_account = raw_context["bank_account"]
     customers = raw_context["customers"]
-    debts = raw_context["debts"]
     members = raw_context["members"]
-    wallet = raw_context["wallet"]
-    payments = raw_context["payments"]
     orders = raw_context["orders"]
     logistics_jobs = raw_context["logistics_jobs"]
 
-    return {
-        "laundry_profile": build_laundry_summary(laundry),
-        "bank_account": build_bank_account_summary(bank_account),
-        "wallet": build_wallet_summary(wallet),
-        "customers": build_customer_summary(customers),
+    common_context = {
+        "access_scope": {
+            "role": role.value,
+            "financial_information_available": role == ContextRole.OWNER,
+        },
+        "laundry_profile": (
+            build_laundry_summary(laundry)
+            if role == ContextRole.OWNER
+            else build_staff_laundry_summary(laundry)
+        ),
+        "workspace": build_workspace_summary(raw_context.get("workspace_settings")),
+        "customers": (
+            build_customer_summary(customers)
+            if role == ContextRole.OWNER
+            else build_staff_customer_summary(customers)
+        ),
         "members": build_member_summary(members),
-        "debts": build_debt_summary(debts),
-        "payments": build_payment_summary(payments),
-        "orders": build_order_summary(orders),
-        "logistics": build_logistics_summary(logistics_jobs, orders),
+        "orders": (
+            build_order_summary(orders)
+            if role == ContextRole.OWNER
+            else build_staff_order_summary(orders)
+        ),
+        "logistics": build_operational_logistics_summary(
+            logistics_jobs,
+            raw_context.get("dispatches", []),
+            raw_context.get("drivers", []),
+        ),
+        "catalog": build_catalog_summary(raw_context),
     }
+    if role == ContextRole.STAFF:
+        common_context["access_scope"]["restricted_domains"] = [
+            "bank accounts",
+            "wallets",
+            "payments and collections",
+            "debts and credit risk",
+            "expenses and profitability",
+            "settlements and financial reconciliation",
+        ]
+        return common_context
+
+    common_context.update(
+        {
+            "bank_account": build_bank_account_summary(raw_context.get("bank_account")),
+            "wallet": build_wallet_summary(raw_context.get("wallet")),
+            "wallet_activity": build_wallet_activity_summary(
+                raw_context.get("wallet_transactions", [])
+            ),
+            "debts": build_debt_summary(raw_context.get("debts", [])),
+            "payments": build_order_payment_summary(raw_context.get("order_payments", [])),
+            "payment_reconciliation": build_reconciliation_summary(
+                raw_context.get("customer_payments", []),
+                raw_context.get("payment_allocations", []),
+                raw_context.get("ledger_entries", []),
+            ),
+            "expenses": build_expense_summary(raw_context.get("monthly_expenses", [])),
+            "settlements": build_settlement_summary(raw_context.get("settlements", [])),
+            "subscription": build_subscription_summary(
+                raw_context.get("subscription_intents", [])
+            ),
+        }
+    )
+    return common_context

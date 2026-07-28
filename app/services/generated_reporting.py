@@ -11,14 +11,10 @@ from app.schemas.report import (
     GenerateReportResponse,
     ReportFileFormat,
 )
-from app.services.generated_report_data import (
-    ChartSpec,
-    ReportDataset,
-    ReportNarrative,
-    build_generated_report_dataset,
-)
-from app.services.mongo import fetch_generated_report_documents
+from app.services.enriched_report_data import build_enriched_report_dataset
+from app.services.generated_report_data import ChartSpec, ReportDataset, ReportNarrative
 from app.services.r2_storage import upload_report
+from app.services.report_repository import fetch_report_source
 from app.services.report_renderers import render_pdf_report, render_xlsx_report
 from app.services.reporting import ensure_utc
 
@@ -101,7 +97,10 @@ def generate_report_narrative(dataset: ReportDataset, period_label: str) -> Repo
         "The executive summary must explain the overall position and the most important implication in at most 180 words. "
         "Provide one concise explanation for every chart title listed, using its actual values and explaining why it matters. "
         "Return 2 to 4 high-value findings and one practical recommendation. Do not invent previous-period comparisons, "
-        "causes, benchmarks, or targets. Do not use markdown.\n\n"
+        "causes, benchmarks, or targets. Never add payment, receipt, allocation, ledger, settlement, or wallet totals "
+        "together unless the verified facts explicitly define that calculation; these commonly represent different "
+        "stages of the same money flow. Describe profitability figures as estimates when the verified facts label them "
+        "that way, and disclose any supplied data-quality limitation. Do not use markdown.\n\n"
         f"Reporting period: {period_label}\n"
         f"Required chart titles: {json.dumps(chart_titles)}\n"
         f"Verified facts: {json.dumps(dataset.narrative_facts(), ensure_ascii=True)}"
@@ -191,7 +190,7 @@ def generate_report_file(payload: GenerateReportRequest) -> GenerateReportRespon
     start_date = ensure_utc(payload.start_date) if payload.start_date else None
     end_date = ensure_utc(payload.end_date) if payload.end_date else None
     try:
-        laundry, documents = fetch_generated_report_documents(
+        laundry, report_source = fetch_report_source(
             payload.laundry_id,
             payload.entity.value,
             start_date,
@@ -202,7 +201,7 @@ def generate_report_file(payload: GenerateReportRequest) -> GenerateReportRespon
     except Exception as exc:
         raise GeneratedReportError("Failed to load report data from MongoDB.") from exc
 
-    dataset = build_generated_report_dataset(payload.entity.value, documents)
+    dataset = build_enriched_report_dataset(payload.entity.value, report_source)
     laundry_name = str(laundry.get("laundryName") or "Laundry")
     period_label = report_period_label(payload)
 

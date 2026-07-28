@@ -195,19 +195,37 @@ def render_xlsx_report(
         cell.alignment = Alignment(wrap_text=True)
     data_sheet.freeze_panes = "A2"
     data_sheet.auto_filter.ref = data_sheet.dimensions
-    money_headers = {
-        "Total Debt", "Amount Paid", "Balance Due", "Amount", "Service Total",
-        "Logistics Total", "Total Payable", "Paid", "Available Balance",
-        "Pending Balance",
-    }
+    money_header_terms = (
+        "amount",
+        "balance",
+        "billed",
+        "collected",
+        "contribution",
+        "credit",
+        "debit",
+        "expenses",
+        "fees",
+        "outstanding",
+        "paid",
+        "payable",
+        "price",
+        "result",
+        "revenue",
+        "sales",
+        "total",
+        "value",
+    )
     for column_index, header in enumerate(dataset.headers, start=1):
+        is_money_column = any(
+            term in str(header).casefold() for term in money_header_terms
+        )
         for cell in data_sheet.iter_cols(
             min_col=column_index,
             max_col=column_index,
             min_row=2,
         ):
             for value_cell in cell:
-                if header in money_headers and isinstance(value_cell.value, (int, float)):
+                if is_money_column and isinstance(value_cell.value, (int, float)):
                     value_cell.number_format = "#,##0.00"
                 elif isinstance(value_cell.value, datetime):
                     value_cell.number_format = "yyyy-mm-dd hh:mm"
