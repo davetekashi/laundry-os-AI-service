@@ -16,8 +16,14 @@ class Settings(BaseModel):
         default="gpt-4.1",
         alias="OPENAI_VISION_MODEL",
     )
-    openai_matching_model: str = "gpt-4.1"
-    openai_chat_model: str = "gpt-4.1"
+    openai_matching_model: str = Field(
+        default="gpt-4.1",
+        alias="OPENAI_MATCHING_MODEL",
+    )
+    openai_chat_model: str = Field(
+        default="gpt-4.1",
+        alias="OPENAI_CHAT_MODEL",
+    )
     default_currency: str = "NGN"
     report_download_url_expiry_seconds: int = 3600
 
