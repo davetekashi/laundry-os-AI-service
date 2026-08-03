@@ -2,12 +2,14 @@ import base64
 import json
 import mimetypes
 from pathlib import Path
+from typing import get_args
 
 from openai import OpenAI
 
 from app.core.config import get_settings
 from app.schemas.price_list import (
     ExtractedPriceListItem,
+    LaundryService,
     PriceListImageExtraction,
     PriceListVisionExtraction,
 )
@@ -34,17 +36,20 @@ Requirements:
 - Keep separately printed duplicate records, including similar records in male and female columns.
 - Ignore headings, addresses, phone numbers, emails, slogans, and table labels as item records.
 - Do not invent, rename, categorize, normalize, combine, or match items.
-- For each record, choose service_reference_item only from the supplied internal service mapping.
-- service_reference_item is used only for service lookup; it must never alter item_name.
-- Choose the closest reference only when the item type is clear, including Nigerian native-wear wording and obvious size, gender, starch, fold, complete/set, or service modifiers.
-- Examples: COMPLETE AGBADA refers to agbada; WOKO COMPLETE refers to woko; TIE DRYCLEANING refers to tie; SHIRT (LIGHT STARCH) & FOLD refers to a shirt.
-- Return service_reference_item as null when the item is unfamiliar or cannot be classified confidently. Never guess a reference merely to avoid null.
+- Return services directly for every record, choosing only from the supplied platform service names.
+- Treat the internal service mapping as grounded examples and established business guidance, not as a closed item taxonomy.
+- When an item clearly corresponds to a mapping entry, follow that entry's services.
+- When no mapping key fits exactly, use semantic understanding of the item to infer every platform service reasonably applicable to it.
+- Reason about composite labels, abbreviations, Nigerian native wear, gender or size modifiers, OCR spelling variations, sets, and locally worded garment names rather than requiring an exact catalog match.
+- For a combined entry, infer services appropriate to the listed entry as a whole.
+- Return an empty services array only when the item itself cannot be understood well enough to infer any service. Do not return an empty array merely because its name is absent from the mapping.
 - raw_ocr_text must be a faithful transcription only. Do not include analysis, reasoning, row numbers, line labels, markdown commentary, or <think> content.
 - Return the laundry/business name only when it is visibly identifiable; otherwise return null.
 """.strip()
 
 
-def build_response_format(canonical_items: list[str]) -> dict:
+def build_response_format() -> dict:
+    supported_services = list(get_args(LaundryService))
     return {
         "type": "json_schema",
         "json_schema": {
@@ -63,16 +68,19 @@ def build_response_format(canonical_items: list[str]) -> dict:
                                 "item_name": {"type": "string"},
                                 "price": {"type": ["integer", "null"]},
                                 "price_text": {"type": "string"},
-                                "service_reference_item": {
-                                    "type": ["string", "null"],
-                                    "enum": [*canonical_items, None],
+                                "services": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string",
+                                        "enum": supported_services,
+                                    },
                                 },
                             },
                             "required": [
                                 "item_name",
                                 "price",
                                 "price_text",
-                                "service_reference_item",
+                                "services",
                             ],
                             "additionalProperties": False,
                         },
@@ -103,7 +111,7 @@ def extract_price_list_image(file_path: str) -> PriceListImageExtraction:
 
     response = client.chat.completions.create(
         model=settings.openai_vision_model,
-        response_format=build_response_format(list(item_services)),
+        response_format=build_response_format(),
         max_completion_tokens=16384,
         temperature=0,
         messages=[
@@ -147,7 +155,7 @@ def extract_price_list_image(file_path: str) -> PriceListImageExtraction:
                 item_name=item_name,
                 price=parse_single_numeric_price(price_text),
                 price_text=price_text,
-                services=item_services.get(item.service_reference_item or "", []),
+                services=list(dict.fromkeys(item.services)),
             )
         )
 

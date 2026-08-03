@@ -81,8 +81,9 @@ class ExtractedPriceListItem(BaseModel):
     services: list[LaundryService] = Field(
         default_factory=list,
         description=(
-            "Supported platform services inferred through the internal item taxonomy. "
-            "Empty when the item cannot be classified confidently."
+            "Supported platform services inferred from the item meaning, with the internal service mapping "
+            "used as business guidance rather than a closed taxonomy. Empty only when the item itself "
+            "cannot be understood sufficiently."
         ),
         examples=[["washing", "ironing", "washing and ironing", "dry cleaning"]],
     )
@@ -92,7 +93,7 @@ class PriceListVisionItem(BaseModel):
     item_name: str
     price: int | None
     price_text: str
-    service_reference_item: str | None
+    services: list[LaundryService]
 
 
 class PriceListVisionExtraction(BaseModel):
