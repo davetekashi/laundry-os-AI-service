@@ -13,7 +13,9 @@ router = APIRouter(tags=["price-lists"])
     summary="Digitize item names and prices from a laundry price list",
     description=(
         "Accepts one or more Cloudflare-hosted image URLs for a laundry price list, performs OCR on each image, "
-        "and returns the item names and prices found in the source list. Item names are preserved as supplied "
+        "and returns the item names and prices found in the source list. The request must also include the "
+        "laundry's currently configured `services`; the AI assigns each item only applicable names from that "
+        "list and never falls back to a predefined service catalogue. Item names are preserved as supplied "
         "by the laundry owner and are not mapped to predefined Laundry OS item types. Each item includes the "
         "original `price_text`; `price` is null when the source contains multiple or non-numeric values.\n\n"
         "Use this endpoint to digitize a laundry owner's existing paper or image-based price list."
@@ -46,7 +48,8 @@ async def normalize_price_list_endpoint(
 ) -> NormalizedPriceListResponse:
     try:
         return await normalize_price_list(
-            [str(file_url) for file_url in payload.resolved_file_urls()]
+            [str(file_url) for file_url in payload.resolved_file_urls()],
+            payload.services,
         )
     except PriceListNormalizationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

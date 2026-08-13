@@ -10,10 +10,13 @@ router = APIRouter(tags=["chat"])
 @router.post(
     "/chat",
     response_model=ChatResponse,
-    summary="Answer a laundry question using in-memory prepared contextual information about the laundry",
+    summary="Chat with Anne using prepared laundry context and general management knowledge",
     description=(
-        "Answers a natural-language question using only the matching laundry-and-role context "
-        "previously prepared via `POST /api/v1/context/prepare`.\n\n"
+        "Answers a natural-language message as Anne, the Seanosis AI Manager. Facts about the specific "
+        "laundry are grounded in the matching laundry-and-role context previously prepared via "
+        "`POST /api/v1/context/prepare`. Anne may also use general knowledge for conversation, explanations, "
+        "brainstorming, and laundry-management guidance, but does not present that guidance as known facts "
+        "about the laundry.\n\n"
         "This endpoint does not build context on demand. If no prepared context exists in memory for the "
         "provided `laundry_id` and `role`, the request will fail and the backend should call `/context/prepare` "
         "first. The backend must send the authenticated role, not a role selected by the frontend. Staff answers "

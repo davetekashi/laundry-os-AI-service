@@ -1,18 +1,4 @@
-from typing import Literal
-
-from pydantic import BaseModel, Field, HttpUrl, model_validator
-
-
-LaundryService = Literal[
-    "washing",
-    "ironing",
-    "washing and ironing",
-    "dry cleaning",
-    "shoe cleaning",
-    "curtain cleaning",
-    "rug / carpet cleaning",
-    "upholstery cleaning",
-]
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 
 class NormalizePriceListRequest(BaseModel):
@@ -20,6 +6,28 @@ class NormalizePriceListRequest(BaseModel):
         description="Cloudflare-accessible image URL or array of image URLs for the laundry price list to normalize.",
         examples=["https://imagedelivery.net/account-id/laundry-price-list-1/public"],
     )
+    services: list[str] = Field(
+        min_length=1,
+        description=(
+            "Current service names configured by the laundry. Extracted items can only be assigned "
+            "services from this list."
+        ),
+        examples=[["washing", "ironing", "premium dry cleaning"]],
+    )
+
+    @field_validator("services")
+    @classmethod
+    def validate_services(cls, services: list[str]) -> list[str]:
+        cleaned_services: list[str] = []
+        for service in services:
+            cleaned_service = service.strip()
+            if not cleaned_service:
+                raise ValueError("services must contain only non-empty service names.")
+            if cleaned_service not in cleaned_services:
+                cleaned_services.append(cleaned_service)
+        if not cleaned_services:
+            raise ValueError("services must contain at least one service name.")
+        return cleaned_services
 
     @model_validator(mode="after")
     def validate_urls(self):
@@ -38,7 +46,8 @@ class NormalizePriceListRequest(BaseModel):
                 "file_url": [
                     "https://imagedelivery.net/account-id/laundry-price-list-1/public",
                     "https://imagedelivery.net/account-id/laundry-price-list-2/public"
-                ]
+                ],
+                "services": ["washing", "ironing", "premium dry cleaning"]
             }
         }
     }
@@ -78,12 +87,11 @@ class ExtractedPriceListItem(BaseModel):
         ),
         examples=["800 / 700"],
     )
-    services: list[LaundryService] = Field(
+    services: list[str] = Field(
         default_factory=list,
         description=(
-            "Supported platform services inferred from the item meaning, with the internal service mapping "
-            "used as business guidance rather than a closed taxonomy. Empty only when the item itself "
-            "cannot be understood sufficiently."
+            "Applicable services inferred from the service names supplied in the request. Service names "
+            "are returned exactly as supplied and no service outside that list is introduced."
         ),
         examples=[["washing", "ironing", "washing and ironing", "dry cleaning"]],
     )
@@ -93,7 +101,7 @@ class PriceListVisionItem(BaseModel):
     item_name: str
     price: int | None
     price_text: str
-    services: list[LaundryService]
+    service_eligibility: dict[str, bool]
 
 
 class PriceListVisionExtraction(BaseModel):

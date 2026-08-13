@@ -20,7 +20,10 @@ def row_identity(row: ExtractedPriceListItem) -> tuple[str, str]:
     return row.item_name.casefold(), row.price_text.casefold()
 
 
-async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListResponse:
+async def normalize_price_list(
+    file_urls: list[str],
+    available_services: list[str],
+) -> NormalizedPriceListResponse:
     if not file_urls:
         raise PriceListNormalizationError("At least one file URL is required.")
 
@@ -40,7 +43,10 @@ async def normalize_price_list(file_urls: list[str]) -> NormalizedPriceListRespo
             temp_file.flush()
 
             try:
-                extraction = extract_price_list_image(temp_file.name)
+                extraction = extract_price_list_image(
+                    temp_file.name,
+                    available_services,
+                )
             except Exception as exc:
                 raise PriceListNormalizationError(
                     f"OpenAI image extraction failed for '{file_url}': {str(exc)}"

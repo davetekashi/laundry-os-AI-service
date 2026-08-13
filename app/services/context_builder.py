@@ -321,6 +321,38 @@ def build_workspace_summary(settings: dict | None) -> dict:
     }
 
 
+def build_conversation_identity(
+    laundry: dict,
+    members: list[dict],
+    role: ContextRole,
+) -> dict:
+    identity = {"laundry_name": laundry.get("laundryName")}
+    if role != ContextRole.OWNER:
+        return identity
+
+    owner_member_id = laundry.get("ownerMemberId")
+    owner = next(
+        (
+            member
+            for member in members
+            if owner_member_id is not None and member.get("_id") == owner_member_id
+        ),
+        None,
+    )
+    if owner is None:
+        owner = next(
+            (
+                member
+                for member in members
+                if str(member.get("role") or "").casefold() == "owner"
+            ),
+            None,
+        )
+    if owner and owner.get("firstName"):
+        identity["owner_first_name"] = str(owner["firstName"]).strip()
+    return identity
+
+
 def build_staff_customer_summary(customers: list[dict]) -> dict:
     active_count = sum(1 for customer in customers if customer.get("isActive"))
     recent_customers = sorted(
@@ -623,6 +655,7 @@ def build_context_summary(raw_context: dict, role: ContextRole) -> dict:
             "role": role.value,
             "financial_information_available": role == ContextRole.OWNER,
         },
+        "conversation_identity": build_conversation_identity(laundry, members, role),
         "laundry_profile": (
             build_laundry_summary(laundry)
             if role == ContextRole.OWNER

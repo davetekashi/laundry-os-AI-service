@@ -2,18 +2,15 @@ import base64
 import json
 import mimetypes
 from pathlib import Path
-from typing import get_args
 
 from openai import OpenAI
 
 from app.core.config import get_settings
 from app.schemas.price_list import (
     ExtractedPriceListItem,
-    LaundryService,
     PriceListImageExtraction,
     PriceListVisionExtraction,
 )
-from app.services.catalog import load_item_services
 from app.services.parser import (
     clean_item_name,
     clean_ocr_text,
@@ -36,20 +33,37 @@ Requirements:
 - Keep separately printed duplicate records, including similar records in male and female columns.
 - Ignore headings, addresses, phone numbers, emails, slogans, and table labels as item records.
 - Do not invent, rename, categorize, normalize, combine, or match items.
-- Return services directly for every record, choosing only from the supplied platform service names.
-- Treat the internal service mapping as grounded examples and established business guidance, not as a closed item taxonomy.
-- When an item clearly corresponds to a mapping entry, follow that entry's services.
-- When no mapping key fits exactly, use semantic understanding of the item to infer every platform service reasonably applicable to it.
-- Reason about composite labels, abbreviations, Nigerian native wear, gender or size modifiers, OCR spelling variations, sets, and locally worded garment names rather than requiring an exact catalog match.
-- For a combined entry, infer services appropriate to the listed entry as a whole.
-- Return an empty services array only when the item itself cannot be understood well enough to infer any service. Do not return an empty array merely because its name is absent from the mapping.
 - raw_ocr_text must be a faithful transcription only. Do not include analysis, reasoning, row numbers, line labels, markdown commentary, or <think> content.
 - Return the laundry/business name only when it is visibly identifiable; otherwise return null.
 """.strip()
 
 
-def build_response_format() -> dict:
-    supported_services = list(get_args(LaundryService))
+SERVICE_INFERENCE_PROMPT = """
+Determine which of the laundry's configured services each extracted price-list item can accommodate.
+
+This is multi-label eligibility classification, not a request to choose the single best, preferred, or most likely service.
+
+Requirements:
+- Evaluate every supplied service independently for every item.
+- Mark every service the item can reasonably accommodate as applicable, even when several services overlap.
+- A combined service does not replace its component services. For example, when separately supplied washing, ironing, and washing-and-ironing services are all compatible with an item, all three are applicable.
+- Dry cleaning or another specialist service can coexist with ordinary garment-care services when the item can reasonably accommodate both.
+- Infer eligibility from the semantic meaning of both the item and service name.
+- Understand composite labels, abbreviations, Nigerian native wear, gender and size modifiers, sets, and locally worded garment names.
+- Be appropriately cautious with delicate, beaded, structured, footwear, curtain, rug, and upholstery items, but do not reduce ordinary garments to one service merely because one option sounds most comprehensive.
+- The supplied services are the only available choices. Do not invent, rename, normalize, or substitute a service.
+- Set every service eligibility field to either true or false. Do not omit any item or service.
+""".strip()
+
+
+def build_response_format(available_services: list[str]) -> dict:
+    service_keys = [f"service_{index}" for index in range(len(available_services))]
+    eligibility_schema = {
+        "type": "object",
+        "properties": {key: {"type": "boolean"} for key in service_keys},
+        "required": service_keys,
+        "additionalProperties": False,
+    }
     return {
         "type": "json_schema",
         "json_schema": {
@@ -68,19 +82,13 @@ def build_response_format() -> dict:
                                 "item_name": {"type": "string"},
                                 "price": {"type": ["integer", "null"]},
                                 "price_text": {"type": "string"},
-                                "services": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "string",
-                                        "enum": supported_services,
-                                    },
-                                },
+                                "service_eligibility": eligibility_schema,
                             },
                             "required": [
                                 "item_name",
                                 "price",
                                 "price_text",
-                                "services",
+                                "service_eligibility",
                             ],
                             "additionalProperties": False,
                         },
@@ -97,28 +105,36 @@ def encode_image(file_path: str) -> str:
     return base64.b64encode(Path(file_path).read_bytes()).decode("utf-8")
 
 
-def extract_price_list_image(file_path: str) -> PriceListImageExtraction:
+def extract_price_list_image(
+    file_path: str,
+    available_services: list[str],
+) -> PriceListImageExtraction:
     settings = get_settings()
     client = OpenAI(api_key=settings.openai_api_key)
     media_type = mimetypes.guess_type(file_path)[0] or "image/jpeg"
-    item_services = load_item_services()
-    service_mapping = json.dumps(item_services, ensure_ascii=True, separators=(",", ":"))
+    indexed_services = {
+        f"service_{index}": service
+        for index, service in enumerate(available_services)
+    }
     prompt = (
         f"{PRICE_LIST_EXTRACTION_PROMPT}\n\n"
-        "INTERNAL SERVICE MAPPING (reference item -> supported services):\n"
-        f"{service_mapping}"
+        f"{SERVICE_INFERENCE_PROMPT}\n\n"
+        "SERVICE KEY MAP:\n"
+        f"{json.dumps(indexed_services, ensure_ascii=True)}"
     )
 
     response = client.chat.completions.create(
         model=settings.openai_vision_model,
-        response_format=build_response_format(),
+        response_format=build_response_format(available_services),
         max_completion_tokens=16384,
         temperature=0,
         messages=[
             {
                 "role": "system",
                 "content": (
-                    "You are a precise document digitization system. Return only data supported by the image."
+                    "You are a precise laundry document digitization and multi-label service "
+                    "eligibility system. Preserve visible document data exactly and evaluate "
+                    "every supplied service independently."
                 ),
             },
             {
@@ -149,13 +165,21 @@ def extract_price_list_image(file_path: str) -> PriceListImageExtraction:
         price_text = item.price_text.strip()
         if not is_valid_item_name(item_name) or not price_text:
             continue
+        if set(item.service_eligibility) != set(indexed_services):
+            raise RuntimeError(
+                "OpenAI price-list extraction omitted one or more service decisions."
+            )
 
         cleaned_items.append(
             ExtractedPriceListItem(
                 item_name=item_name,
                 price=parse_single_numeric_price(price_text),
                 price_text=price_text,
-                services=list(dict.fromkeys(item.services)),
+                services=[
+                    service
+                    for service_key, service in indexed_services.items()
+                    if item.service_eligibility[service_key]
+                ],
             )
         )
 

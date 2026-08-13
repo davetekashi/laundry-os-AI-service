@@ -15,7 +15,10 @@ class ChatRequest(BaseModel):
     )
     message: str = Field(
         min_length=1,
-        description="Natural-language business question to answer using prepared laundry context only.",
+        description=(
+            "Natural-language message for Anne. Laundry-specific claims are grounded in prepared context; "
+            "general conversation and management guidance may use Anne's broader knowledge."
+        ),
         examples=["Give me a summary of my laundry business right now."],
     )
 
@@ -48,7 +51,10 @@ class ChatResponse(BaseModel):
         examples=["2026-06-16T13:23:36.218984+00:00"],
     )
     answer: str = Field(
-        description="Model-generated answer grounded only in the prepared laundry context.",
+        description=(
+            "Anne's answer. Laundry-specific facts are grounded in prepared context, while general advice "
+            "and conversation may draw on broader knowledge without being represented as laundry facts."
+        ),
         examples=["Your laundry currently has 7 orders, 15 payments, 3 customers, and 18 debt records."],
     )
 
