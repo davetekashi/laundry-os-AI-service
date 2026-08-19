@@ -11,20 +11,29 @@ class ContextPreparationError(Exception):
 
 
 def prepare_laundry_context(
-    laundry_id: str,
+    laundry_id: str | None,
     role: ContextRole,
+    business_id: str | None = None,
 ) -> PrepareContextResponse:
     try:
-        raw_context = fetch_laundry_context_documents(laundry_id, role)
+        raw_context = fetch_laundry_context_documents(
+            laundry_id,
+            role,
+            business_id,
+        )
     except ValueError as exc:
         raise ContextPreparationError(str(exc)) from exc
     except Exception as exc:
         raise ContextPreparationError("Failed to load laundry context from MongoDB.") from exc
 
     prepared_at = datetime.now(UTC).isoformat()
+    scope = raw_context.pop("_scope")
     context = build_context_summary(raw_context, role)
     snapshot = ContextSnapshot(
-        laundry_id=laundry_id,
+        laundry_id=str(scope.laundry_id),
+        business_id=str(scope.business_id) if scope.business_id else None,
+        scope_mode=scope.mode,
+        cache_key=scope.cache_key,
         role=role,
         prepared_at=prepared_at,
         context=context,
@@ -54,7 +63,9 @@ def prepare_laundry_context(
 
     return PrepareContextResponse(
         success=True,
-        laundry_id=laundry_id,
+        laundry_id=str(scope.laundry_id),
+        business_id=str(scope.business_id) if scope.business_id else None,
+        scope_mode=scope.mode,
         role=role,
         prepared_at=prepared_at,
         summary=summary,

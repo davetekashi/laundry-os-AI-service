@@ -48,14 +48,15 @@ def build_chat_prompt(context: dict, role: ContextRole, message: str) -> str:
 
 
 def answer_laundry_question(
-    laundry_id: str,
+    laundry_id: str | None,
     role: ContextRole,
     message: str,
+    business_id: str | None = None,
 ) -> ChatResponse:
-    snapshot = get_context(laundry_id, role)
+    snapshot = get_context(laundry_id, role, business_id)
     if not snapshot:
         raise ChatServiceError(
-            f"Context for this laundry and role '{role.value}' has not been prepared."
+            f"Context for this business scope and role '{role.value}' has not been prepared."
         )
 
     settings = get_settings()
@@ -80,7 +81,9 @@ def answer_laundry_question(
 
     return ChatResponse(
         success=True,
-        laundry_id=laundry_id,
+        laundry_id=snapshot.laundry_id,
+        business_id=snapshot.business_id,
+        scope_mode=snapshot.scope_mode,
         role=role,
         prepared_at=snapshot.prepared_at,
         answer=answer.strip(),

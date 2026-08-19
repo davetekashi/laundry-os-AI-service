@@ -24,8 +24,11 @@ router = APIRouter(tags=["reports"])
     response_model=GenerateReportResponse,
     summary="Generate and upload an entity report as PDF or Excel",
     description=(
-        "Generates an entity-specific management report for one laundry, uploads it to the configured "
+        "Generates an entity-specific management report for one laundry business, uploads it to the configured "
         "private Cloudflare R2 bucket, and returns a temporary download URL.\n\n"
+        "Send `laundry_id`, `business_id`, or both. At least one is required. Migrated businesses are resolved "
+        "across both identifiers; legacy laundries without a business record remain supported. If both ids are "
+        "provided, they must belong together.\n\n"
         "Supported entities are `laundry`, `bank_account`, `customers`, `debts`, `members`, `wallet`, "
         "`logistics`, `payments`, `orders`, `expenses`, `profitability`, `settlements`, "
         "`wallet_transactions`, `services`, `items`, and `financial_reconciliation`. Historical entities "
@@ -33,11 +36,11 @@ router = APIRouter(tags=["reports"])
         "snapshot entities (`laundry`, `bank_account`, and `wallet`) do not.\n\n"
         "Reports combine the selected entity with the relevant orders, order payments, customer receipts, "
         "payment allocations, ledger entries, expenses, settlements, wallet movements, and service/item "
-        "catalog records where applicable. Payment stages are reconciled rather than added together, preventing "
-        "the same money from being counted repeatedly. Expense records are monthly accounting records: if a "
-        "selected range touches a month, that month's recorded expense is included without artificial daily prorating. "
+        "catalog records where applicable. Refunds reduce net collections. Payment stages are reconciled rather than added together, preventing "
+        "the same money from being counted repeatedly. If a selected range contains a dated expense, that actual "
+        "expense record is included; legacy monthly records remain compatible without artificial prorating. "
         "`profitability` is therefore an operating estimate that clearly separates billed sales, cash collections, "
-        "recorded monthly expenses, and platform fees.\n\n"
+        "recorded expenses, and platform fees.\n\n"
         "PDF reports contain verified KPI metrics, a decision-focused executive analysis, only charts "
         "supported by sufficient data, an explanation beneath every chart, key findings, and a recommended action. "
         "PDF files deliberately exclude detailed record tables. XLSX reports contain one clean `Data` worksheet "
@@ -48,7 +51,7 @@ router = APIRouter(tags=["reports"])
     ),
     responses={
         400: {
-            "description": "Invalid laundry id, unsupported request, or report data failure.",
+            "description": "Invalid scope id, unsupported request, or report data failure.",
             "content": {"application/json": {"example": {"detail": "Laundry not found."}}},
         },
         500: {
@@ -86,11 +89,12 @@ def generate_report_endpoint(payload: GenerateReportRequest) -> GenerateReportRe
         "Generates a plain-text weekly business summary for a laundry within a caller-specified ISO date range. "
         "The endpoint computes factual metrics from MongoDB first, then uses the AI model only to convert those "
         "facts into a narrative summary suitable for insertion into a document by the backend.\n\n"
-        "The backend should send `laundry_id`, `start_date`, and `end_date` in ISO 8601 format."
+        "The backend should send either `laundry_id` or `business_id` plus `start_date` and `end_date` in ISO 8601 format. "
+        "Both ids may be sent together for relationship validation."
     ),
     responses={
         400: {
-            "description": "Invalid laundry id, invalid date range, or report-generation validation failure.",
+            "description": "Invalid scope id, invalid date range, or report-generation validation failure.",
             "content": {
                 "application/json": {
                     "example": {"detail": "end_date must be greater than start_date."}
@@ -115,6 +119,7 @@ def weekly_summary_report_endpoint(
             payload.laundry_id,
             payload.start_date,
             payload.end_date,
+            payload.business_id,
         )
     except WeeklySummaryReportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -133,11 +138,12 @@ def weekly_summary_report_endpoint(
         "Generates a current debt-risk report for a laundry using all currently outstanding debt records. "
         "The response includes a structured debt table with `Customer`, `Debt Owed`, and `Time Frame`, "
         "plus a plain-text summary that explains the debt exposure and trend.\n\n"
-        "This endpoint is not tied to a reporting date range. It uses the full current debt position for the specified laundry."
+        "This endpoint is not tied to a reporting date range. It uses the full current debt position for the resolved "
+        "business scope. Send `laundry_id`, `business_id`, or both."
     ),
     responses={
         400: {
-            "description": "Invalid laundry id or debt-risk generation failure.",
+            "description": "Invalid scope id or debt-risk generation failure.",
             "content": {
                 "application/json": {
                     "example": {"detail": "Laundry not found."}
@@ -158,7 +164,10 @@ def debt_risk_analysis_report_endpoint(
     payload: DebtRiskAnalysisRequest,
 ) -> DebtRiskAnalysisResponse:
     try:
-        return generate_debt_risk_analysis_report(payload.laundry_id)
+        return generate_debt_risk_analysis_report(
+            payload.laundry_id,
+            payload.business_id,
+        )
     except WeeklySummaryReportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

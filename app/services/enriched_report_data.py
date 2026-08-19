@@ -40,8 +40,20 @@ def _confirmed_payments(payments: list[dict]) -> list[dict]:
     ]
 
 
+def _signed_amount(document: dict, field_name: str = "amount") -> float:
+    amount = safe_number(document.get(field_name))
+    transaction_type = str(document.get("transactionType") or "").lower()
+    return -amount if transaction_type == "refund" else amount
+
+
 def _payment_date(payment: dict) -> datetime | None:
-    for field_name in ("paidAt", "confirmedAt", "recordedAt", "createdAt"):
+    for field_name in (
+        "paidAt",
+        "transactionDate",
+        "confirmedAt",
+        "recordedAt",
+        "createdAt",
+    ):
         value = payment.get(field_name)
         if isinstance(value, datetime):
             return value
@@ -97,10 +109,15 @@ def _catalog_maps(source: ReportSource) -> tuple[dict, dict, dict]:
         document.get("_id"): document.get("itemName") or document.get("normalizedItemName")
         for document in _documents(source, "item_prices")
     }
-    service_names = {
-        document.get("_id"): document.get("name") or document.get("slug")
-        for document in _documents(source, "global_services")
-    }
+    service_names = {}
+    for document in (
+        _documents(source, "global_services")
+        + _documents(source, "laundry_services")
+    ):
+        name = document.get("name") or document.get("slug") or document.get("serviceKey")
+        for key in (document.get("_id"), document.get("service"), document.get("serviceKey")):
+            if key is not None and name:
+                service_names[key] = name
     type_documents = _documents(source, "global_item_types")
     category_names = {
         document.get("_id"): document.get("name")
@@ -153,10 +170,24 @@ def _order_item_rows(source: ReportSource) -> list[dict]:
 
 def build_laundry_report(source: ReportSource) -> ReportDataset:
     laundry = source.records[0] if source.records else {}
+    business = source.related.get("business") or {}
     settings = source.related.get("workspace_settings") or {}
-    operations = settings.get("operations") or {}
+    business_settings = source.related.get("business_settings") or {}
+    branch_settings = _documents(source, "branch_settings")
+    operations = (
+        settings.get("operations")
+        or business_settings.get("operations")
+        or (business_settings.get("values") or {}).get("operations")
+        or {}
+    )
     intents = _documents(source, "subscription_intents")
     latest_intent = intents[-1] if intents else {}
+    business_name = (
+        business.get("name")
+        or business.get("businessName")
+        or laundry.get("laundryName")
+        or ""
+    )
     return ReportDataset(
         title="Laundry Business Configuration Report",
         metrics=[
@@ -164,6 +195,7 @@ def build_laundry_report(source: ReportSource) -> ReportDataset:
             ("Subscription", str(laundry.get("subscriptionStatus") or "Unavailable")),
             ("Plan", str(laundry.get("planType") or "Unavailable")),
             ("Commission Due", money_text(laundry.get("commissionBalanceDue"))),
+            ("Configured Branches", str(len(branch_settings))),
             ("Turnaround Target", f"{operations.get('defaultTurnaroundDays', 0)} days"),
         ],
         headers=[
@@ -171,7 +203,7 @@ def build_laundry_report(source: ReportSource) -> ReportDataset:
             "Default Turnaround Days", "Minimum Payment Percentage", "Latest Plan Intent",
         ],
         rows=[[
-            laundry.get("laundryName", ""), laundry.get("laundryCode", ""),
+            business_name, laundry.get("laundryCode", ""),
             laundry.get("planType", ""), laundry.get("subscriptionStatus", ""),
             bool(laundry.get("isActive")), bool(laundry.get("isVerified")),
             operations.get("defaultTurnaroundDays", 0), operations.get("minimumPaymentPercentage", 0),
@@ -184,6 +216,8 @@ def build_laundry_report(source: ReportSource) -> ReportDataset:
             "commission_balance_due": safe_number(laundry.get("commissionBalanceDue")),
             "subscription_status": laundry.get("subscriptionStatus"),
             "latest_subscription_intent": latest_intent.get("status"),
+            "scope_mode": "migrated" if business else "legacy",
+            "configured_branch_count": len(branch_settings),
             "operations": operations,
         },
     )
@@ -221,11 +255,11 @@ def build_order_report(source: ReportSource) -> ReportDataset:
     period_payments = _confirmed_payments(_documents(source, "payments_in_period"))
     payments_by_order: dict[ObjectId, float] = defaultdict(float)
     for payment in order_payments:
-        payments_by_order[payment.get("orderId")] += safe_number(payment.get("amount"))
+        payments_by_order[payment.get("orderId")] += _signed_amount(payment)
 
     billed = sum(safe_number(order.get("totalPayable")) for order in orders)
     collected_for_orders = sum(payments_by_order.values())
-    cash_collected_in_period = sum(safe_number(payment.get("amount")) for payment in period_payments)
+    cash_collected_in_period = sum(_signed_amount(payment) for payment in period_payments)
     outstanding = max(billed - collected_for_orders, 0)
     item_count = sum(safe_number(order.get("itemCount")) for order in orders)
     service_total = sum(safe_number(order.get("serviceTotal")) for order in orders)
@@ -302,14 +336,17 @@ def build_payment_report(source: ReportSource) -> ReportDataset:
     receipts = _documents(source, "customer_payments")
     allocations = _documents(source, "allocations")
     ledger_entries = _documents(source, "ledger_entries")
-    confirmed_total = sum(safe_number(row.get("amount")) for row in confirmed)
-    receipt_total = sum(safe_number(row.get("totalAmount")) for row in receipts)
-    service_total = sum(safe_number(row.get("serviceAmount")) for row in confirmed)
-    delivery_total = sum(safe_number(row.get("deliveryAmount")) for row in confirmed)
+    confirmed_total = sum(_signed_amount(row) for row in confirmed)
+    receipt_total = sum(_signed_amount(row, "totalAmount") for row in receipts)
+    service_total = sum(_signed_amount(row, "serviceAmount") for row in confirmed)
+    delivery_total = sum(_signed_amount(row, "deliveryAmount") for row in confirmed)
     method_counts = Counter(_payment_method(row) for row in confirmed)
-    dated = _dated_payment_documents(confirmed)
+    dated = [
+        {**row, "signedAmount": _signed_amount(row)}
+        for row in _dated_payment_documents(confirmed)
+    ]
     charts: list[ChartSpec] = []
-    add_chart(charts, daily_chart("Confirmed Collections Trend", dated, "_effectiveDate", "amount"))
+    add_chart(charts, daily_chart("Net Collections Trend", dated, "_effectiveDate", "signedAmount"))
     add_chart(charts, distribution_chart("Collection Methods", method_counts))
     add_chart(charts, top_value_chart("Collection Components", [
         ("Service", service_total), ("Delivery", delivery_total),
@@ -359,14 +396,38 @@ def build_customer_report(source: ReportSource) -> ReportDataset:
     order_counts: Counter = Counter()
     collected: dict[ObjectId, float] = defaultdict(float)
     balances: dict[ObjectId, float] = defaultdict(float)
+    customer_lookup: dict[ObjectId, ObjectId] = {}
+    for customer in customers:
+        canonical_id = customer.get("_id")
+        if not isinstance(canonical_id, ObjectId):
+            continue
+        for field_name in (
+            "_id",
+            "businessCustomerId",
+            "legacyLaundryCustomerId",
+            "userId",
+        ):
+            reference = customer.get(field_name)
+            if isinstance(reference, ObjectId):
+                customer_lookup[reference] = canonical_id
     for order in orders:
-        customer_id = order.get("laundryCustomerId")
+        customer_id = customer_lookup.get(
+            order.get("laundryCustomerId") or order.get("userId"),
+            order.get("laundryCustomerId") or order.get("userId"),
+        )
         order_values[customer_id] += safe_number(order.get("totalPayable"))
         order_counts[customer_id] += 1
     for payment in payments:
-        collected[payment.get("laundryCustomerId")] += safe_number(payment.get("amount"))
+        customer_id = customer_lookup.get(
+            payment.get("laundryCustomerId"), payment.get("laundryCustomerId")
+        )
+        collected[customer_id] += _signed_amount(payment)
     for debt in debts:
-        balances[debt.get("laundryCustomerId")] += safe_number(debt.get("balanceDue"))
+        customer_id = customer_lookup.get(
+            debt.get("laundryCustomerId") or debt.get("userId"),
+            debt.get("laundryCustomerId") or debt.get("userId"),
+        )
+        balances[customer_id] += safe_number(debt.get("balanceDue"))
 
     total_billed = sum(order_values.values())
     total_collected = sum(collected.values())
@@ -415,7 +476,7 @@ def build_debt_report(source: ReportSource) -> ReportDataset:
     payments = _confirmed_payments(_documents(source, "order_payments"))
     payment_by_order: dict[ObjectId, float] = defaultdict(float)
     for payment in payments:
-        payment_by_order[payment.get("orderId")] += safe_number(payment.get("amount"))
+        payment_by_order[payment.get("orderId")] += _signed_amount(payment)
     total = sum(safe_number(row.get("totalAmount")) for row in debts)
     debt_paid = sum(safe_number(row.get("amountPaid")) for row in debts)
     outstanding = sum(safe_number(row.get("balanceDue")) for row in debts)
@@ -475,16 +536,38 @@ def build_member_report(source: ReportSource) -> ReportDataset:
     members = source.records
     orders = _documents(source, "orders")
     payments = _confirmed_payments(_documents(source, "order_payments"))
-    orders_by_member: Counter = Counter(order.get("createdByStaffId") for order in orders)
+    member_lookup: dict[ObjectId, ObjectId] = {}
+    for member in members:
+        canonical_id = member.get("_id")
+        if not isinstance(canonical_id, ObjectId):
+            continue
+        for field_name in ("_id", "userId", "legacyMemberId"):
+            reference = member.get(field_name)
+            if isinstance(reference, ObjectId):
+                member_lookup[reference] = canonical_id
+
+    def member_id_for(document: dict, *fields: str):
+        reference = next((document.get(field) for field in fields if document.get(field)), None)
+        return member_lookup.get(reference, reference)
+
+    orders_by_member: Counter = Counter(
+        member_id_for(order, "createdByStaffId", "createdByMemberId", "createdByUserId")
+        for order in orders
+    )
     order_value_by_member: dict[ObjectId, float] = defaultdict(float)
     payments_by_member: Counter = Counter()
     payment_value_by_member: dict[ObjectId, float] = defaultdict(float)
     for order in orders:
-        order_value_by_member[order.get("createdByStaffId")] += safe_number(order.get("totalPayable"))
+        member_id = member_id_for(
+            order, "createdByStaffId", "createdByMemberId", "createdByUserId"
+        )
+        order_value_by_member[member_id] += safe_number(order.get("totalPayable"))
     for payment in payments:
-        member_id = payment.get("recordedByMemberId") or payment.get("confirmedByMemberId")
+        member_id = member_id_for(
+            payment, "recordedByMemberId", "confirmedByMemberId"
+        )
         payments_by_member[member_id] += 1
-        payment_value_by_member[member_id] += safe_number(payment.get("amount"))
+        payment_value_by_member[member_id] += _signed_amount(payment)
     active = sum(1 for row in members if row.get("isActive"))
     charts: list[ChartSpec] = []
     add_chart(charts, top_value_chart("Order Value Created by Team Member", [
@@ -615,19 +698,38 @@ def build_expense_report(source: ReportSource) -> ReportDataset:
     category_totals: dict[str, float] = defaultdict(float)
     month_totals: dict[str, float] = defaultdict(float)
     for document in source.records:
-        month_label = f"{document.get('year', '')}-{int(document.get('monthNumber', 0) or 0):02d}"
+        expense_date = document.get("expenseDate") or document.get("createdAt")
+        if isinstance(expense_date, datetime):
+            month_label = expense_date.strftime("%Y-%m")
+            date_value = excel_datetime(expense_date)
+        else:
+            month_label = f"{document.get('year', '')}-{int(document.get('monthNumber', 0) or 0):02d}"
+            date_value = month_label
         entries = document.get("entries") or []
-        if not entries:
-            rows.append([month_label, "Uncategorized", "", safe_number(document.get("totalExpenses"))])
+        direct_amount = safe_number(document.get("amount"))
+        if not entries and direct_amount:
+            category = str(document.get("category") or "Uncategorized")
+            description = str(
+                document.get("description")
+                or document.get("title")
+                or document.get("subcategory")
+                or ""
+            )
+            rows.append([date_value, category, description, direct_amount])
+            category_totals[category] += direct_amount
+            month_totals[month_label] += direct_amount
+        elif not entries:
+            legacy_total = safe_number(document.get("totalExpenses"))
+            rows.append([date_value, "Uncategorized", "", legacy_total])
+            category_totals["Uncategorized"] += legacy_total
+            month_totals[month_label] += legacy_total
         for entry in entries:
             category = str(entry.get("category") or "Uncategorized")
             amount = safe_number(entry.get("amount"))
-            rows.append([month_label, category, entry.get("subcategory", ""), amount])
+            rows.append([date_value, category, entry.get("subcategory", ""), amount])
             category_totals[category] += amount
             month_totals[month_label] += amount
-        if entries and not month_totals.get(month_label):
-            month_totals[month_label] = safe_number(document.get("totalExpenses"))
-    total = sum(safe_number(document.get("totalExpenses")) for document in source.records)
+    total = sum(month_totals.values())
     charts: list[ChartSpec] = []
     add_chart(charts, top_value_chart("Expenses by Category", list(category_totals.items())))
     if len(month_totals) >= 2:
@@ -637,18 +739,18 @@ def build_expense_report(source: ReportSource) -> ReportDataset:
         title="Recorded Expense Report",
         metrics=[
             ("Recorded Expenses", money_text(total)),
-            ("Months Included", str(len(source.records))),
+            ("Months Included", str(len(month_totals))),
             ("Expense Entries", str(len(rows))),
-            ("Average per Month", money_text(total / len(source.records) if source.records else 0)),
+            ("Average per Month", money_text(total / len(month_totals) if month_totals else 0)),
         ],
-        headers=["Month", "Category", "Subcategory", "Amount"],
+        headers=["Date", "Category", "Description", "Amount"],
         rows=rows,
         charts=charts,
         analytical_context={
             "recorded_expense_total": total,
             "months_included": sorted(month_totals),
             "category_totals": dict(category_totals),
-            "expense_scope_note": "Monthly expenses are included by overlapping calendar month and are not prorated for partial months.",
+            "expense_scope_note": "Expenses are included from actual dated expense records in the selected period; legacy monthly records are not prorated.",
         },
     )
 
@@ -660,8 +762,12 @@ def build_profitability_report(source: ReportSource) -> ReportDataset:
     billed = sum(safe_number(row.get("totalPayable")) for row in orders)
     service_sales = sum(safe_number(row.get("serviceTotal")) for row in orders)
     logistics_sales = sum(safe_number(row.get("logisticsTotal")) for row in orders)
-    cash_collected = sum(safe_number(row.get("amount")) for row in payments)
-    expense_total = sum(safe_number(row.get("totalExpenses")) for row in expenses)
+    cash_collected = sum(_signed_amount(row) for row in payments)
+    expense_total = sum(
+        safe_number(row.get("amount"))
+        or safe_number(row.get("totalExpenses"))
+        for row in expenses
+    )
     platform_fees = sum(safe_number(row.get("seanosisServiceFee")) for row in orders)
     estimated_operating_result = service_sales - expense_total - platform_fees
     cash_contribution = cash_collected - expense_total
@@ -700,7 +806,7 @@ def build_profitability_report(source: ReportSource) -> ReportDataset:
             "estimated_operating_result": estimated_operating_result,
             "cash_contribution_after_recorded_expenses": cash_contribution,
             "collection_rate_percent": percentage(cash_collected, billed),
-            "expense_scope_note": "Monthly expenses are included by overlapping calendar month and are not prorated.",
+            "expense_scope_note": "Expenses use actual dated records in the selected period; legacy monthly records are not prorated.",
         },
     )
 
@@ -850,8 +956,8 @@ def build_financial_reconciliation_report(source: ReportSource) -> ReportDataset
             ledger_by_payment[entry.get("orderPaymentId")][direction] += safe_number(entry.get("amount"))
 
     confirmed = _confirmed_payments(payments)
-    payment_total = sum(safe_number(row.get("amount")) for row in confirmed)
-    receipt_total = sum(safe_number(row.get("totalAmount")) for row in receipts)
+    payment_total = sum(_signed_amount(row) for row in confirmed)
+    receipt_total = sum(_signed_amount(row, "totalAmount") for row in receipts)
     allocation_total = sum(safe_number(row.get("amount")) for row in allocations)
     ledger_credit = sum(safe_number(row.get("amount")) for row in ledger_entries if str(row.get("direction")).lower() == "credit")
     ledger_debit = sum(safe_number(row.get("amount")) for row in ledger_entries if str(row.get("direction")).lower() == "debit")

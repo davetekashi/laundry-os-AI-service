@@ -400,15 +400,21 @@ def generate_debt_risk_summary_text(facts: dict, table: ReportTable) -> str:
 
 
 def generate_weekly_summary_report(
-    laundry_id: str,
+    laundry_id: str | None,
     start_date: datetime,
     end_date: datetime,
+    business_id: str | None = None,
 ) -> WeeklySummaryReportResponse:
     start_date = ensure_utc(start_date)
     end_date = ensure_utc(end_date)
 
     try:
-        raw_documents = fetch_laundry_report_documents(laundry_id, start_date, end_date)
+        raw_documents = fetch_laundry_report_documents(
+            laundry_id,
+            start_date,
+            end_date,
+            business_id,
+        )
     except ValueError as exc:
         raise WeeklySummaryReportError(str(exc)) from exc
     except Exception as exc:
@@ -425,9 +431,12 @@ def generate_weekly_summary_report(
             f"Failed to generate weekly summary text: {str(exc)}"
         ) from exc
 
+    scope = raw_documents["_scope"]
     return WeeklySummaryReportResponse(
         success=True,
-        laundry_id=laundry_id,
+        laundry_id=str(scope.laundry_id),
+        business_id=str(scope.business_id) if scope.business_id else None,
+        scope_mode=scope.mode,
         start_date=start_date.isoformat(),
         end_date=end_date.isoformat(),
         summary=summary_text,
@@ -435,13 +444,19 @@ def generate_weekly_summary_report(
 
 
 def generate_debt_risk_analysis_report(
-    laundry_id: str,
+    laundry_id: str | None,
+    business_id: str | None = None,
 ) -> DebtRiskAnalysisResponse:
     as_of_date = datetime.now(UTC)
 
     try:
         historical_window_start = datetime(1970, 1, 1, tzinfo=UTC)
-        raw_documents = fetch_laundry_report_documents(laundry_id, historical_window_start, as_of_date)
+        raw_documents = fetch_laundry_report_documents(
+            laundry_id,
+            historical_window_start,
+            as_of_date,
+            business_id,
+        )
     except ValueError as exc:
         raise WeeklySummaryReportError(str(exc)) from exc
     except Exception as exc:
@@ -459,9 +474,12 @@ def generate_debt_risk_analysis_report(
             f"Failed to generate debt-risk summary text: {str(exc)}"
         ) from exc
 
+    scope = raw_documents["_scope"]
     return DebtRiskAnalysisResponse(
         success=True,
-        laundry_id=laundry_id,
+        laundry_id=str(scope.laundry_id),
+        business_id=str(scope.business_id) if scope.business_id else None,
+        scope_mode=scope.mode,
         generated_at=as_of_date.isoformat(),
         summary=summary_text,
         table=table,

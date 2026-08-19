@@ -13,14 +13,16 @@ router = APIRouter(tags=["chat"])
     summary="Chat with Anne using prepared laundry context and general management knowledge",
     description=(
         "Answers a natural-language message as Anne, the Seanosis AI Manager. Facts about the specific "
-        "laundry are grounded in the matching laundry-and-role context previously prepared via "
+        "business are grounded in the matching scope-and-role context previously prepared via "
         "`POST /api/v1/context/prepare`. Anne may also use general knowledge for conversation, explanations, "
         "brainstorming, and laundry-management guidance, but does not present that guidance as known facts "
         "about the laundry.\n\n"
         "This endpoint does not build context on demand. If no prepared context exists in memory for the "
-        "provided `laundry_id` and `role`, the request will fail and the backend should call `/context/prepare` "
+        "provided id and `role`, the request will fail and the backend should call `/context/prepare` "
         "first. The backend must send the authenticated role, not a role selected by the frontend. Staff answers "
-        "cannot access owner-only financial information because it is absent from the staff snapshot."
+        "cannot access owner-only financial information because it is absent from the staff snapshot.\n\n"
+        "Send `laundry_id`, `business_id`, or both. For a migrated scope, chat can retrieve the prepared snapshot "
+        "through either id. If both are supplied, both must identify the same prepared snapshot."
     ),
     responses={
         400: {
@@ -45,7 +47,12 @@ router = APIRouter(tags=["chat"])
 )
 def chat_endpoint(payload: ChatRequest) -> ChatResponse:
     try:
-        return answer_laundry_question(payload.laundry_id, payload.role, payload.message)
+        return answer_laundry_question(
+            payload.laundry_id,
+            payload.role,
+            payload.message,
+            payload.business_id,
+        )
     except ChatServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

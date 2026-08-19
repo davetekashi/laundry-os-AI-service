@@ -1,14 +1,10 @@
 from pydantic import BaseModel, Field
 
 from app.schemas.context import ContextRole
+from app.schemas.scope import ScopeIdentifiers
 
 
-class ChatRequest(BaseModel):
-    laundry_id: str = Field(
-        min_length=1,
-        description="MongoDB ObjectId string for a laundry whose context has already been prepared in memory.",
-        examples=["6a18a4e625addd1b6e2406b7"],
-    )
+class ChatRequest(ScopeIdentifiers):
     role: ContextRole = Field(
         description="Authenticated role used to retrieve the matching isolated context snapshot.",
         examples=["staff"],
@@ -25,8 +21,9 @@ class ChatRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "laundry_id": "6a18a4e625addd1b6e2406b7",
-                "role": "staff",
+                "laundry_id": "6a54b1f08898ecb11ff0068f",
+                "business_id": "6a8496025e553211a5ecc1dd",
+                "role": "owner",
                 "message": "Give me a summary of my laundry business right now."
             }
         }
@@ -40,7 +37,15 @@ class ChatResponse(BaseModel):
     )
     laundry_id: str = Field(
         description="Laundry id whose prepared context was used to answer the question.",
-        examples=["6a18a4e625addd1b6e2406b7"],
+        examples=["6a54b1f08898ecb11ff0068f"],
+    )
+    business_id: str | None = Field(
+        default=None,
+        description="Resolved migrated business id, or null for a legacy-only laundry.",
+    )
+    scope_mode: str = Field(
+        description="Resolved data mode used by the prepared context.",
+        examples=["migrated"],
     )
     role: ContextRole = Field(
         description="Role of the prepared context used for this answer.",
@@ -62,8 +67,10 @@ class ChatResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "success": True,
-                "laundry_id": "6a18a4e625addd1b6e2406b7",
-                "role": "staff",
+                "laundry_id": "6a54b1f08898ecb11ff0068f",
+                "business_id": "6a8496025e553211a5ecc1dd",
+                "scope_mode": "migrated",
+                "role": "owner",
                 "prepared_at": "2026-06-16T13:23:36.218984+00:00",
                 "answer": "Your laundry currently has 7 orders and 3 customers. Two orders are awaiting delivery."
             }

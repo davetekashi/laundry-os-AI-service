@@ -208,7 +208,11 @@ def build_payment_summary(payments: list[dict]) -> dict:
 
     return {
         "total_payments": len(payments),
-        "total_amount_received": sum_numbers(payments, "totalAmount"),
+        "total_amount_received": sum(
+            (-1 if str(payment.get("transactionType") or "").lower() == "refund" else 1)
+            * float(payment.get("totalAmount", 0) or 0)
+            for payment in payments
+        ),
         "status_counts": dict(status_counts),
         "method_counts": dict(method_counts),
         "payment_channel_counts": dict(channel_counts),
@@ -235,7 +239,8 @@ def build_order_summary(orders: list[dict]) -> dict:
         order.get("paymentStatus", "unknown") for order in orders
     )
     service_mode_counts = Counter(
-        order.get("fulfillmentInfo", {}).get("serviceMode", "unknown")
+        order.get("fulfillmentInfo", {}).get("method")
+        or order.get("fulfillmentInfo", {}).get("serviceMode", "unknown")
         for order in orders
     )
 
@@ -309,15 +314,31 @@ def build_staff_laundry_summary(laundry: dict) -> dict:
     }
 
 
-def build_workspace_summary(settings: dict | None) -> dict:
+def build_workspace_summary(
+    settings: dict | None,
+    business_settings: dict | None = None,
+    branch_settings: list[dict] | None = None,
+) -> dict:
     settings = settings or {}
-    operations = settings.get("operations") or {}
+    business_settings = business_settings or {}
+    branch_settings = branch_settings or []
+    operations = (
+        settings.get("operations")
+        or business_settings.get("operations")
+        or (business_settings.get("values") or {}).get("operations")
+        or {}
+    )
+    branch_values = [setting.get("values") or {} for setting in branch_settings]
     return {
         "default_turnaround_days": operations.get("defaultTurnaroundDays"),
         "operating_hours": operations.get("operatingHours"),
         "pickup_enabled": operations.get("pickupEnabled"),
         "delivery_enabled": operations.get("deliveryEnabled"),
         "notifications_configured": bool(settings.get("notifications")),
+        "configured_branch_count": len(branch_settings),
+        "payment_methods_configured": any(
+            values.get("paymentMethods") for values in branch_values
+        ),
     }
 
 
@@ -388,7 +409,8 @@ def build_staff_order_summary(orders: list[dict]) -> dict:
         order.get("paymentStatus", "unknown") for order in orders
     )
     service_mode_counts = Counter(
-        (order.get("fulfillmentInfo") or {}).get("serviceMode", "unknown")
+        (order.get("fulfillmentInfo") or {}).get("method")
+        or (order.get("fulfillmentInfo") or {}).get("serviceMode", "unknown")
         for order in orders
     )
     recent_orders = sorted(
@@ -457,6 +479,7 @@ def build_operational_logistics_summary(
 def _payment_date(payment: dict) -> Any:
     return (
         payment.get("paidAt")
+        or payment.get("transactionDate")
         or payment.get("confirmedAt")
         or payment.get("recordedAt")
         or payment.get("createdAt")
@@ -478,9 +501,26 @@ def build_order_payment_summary(payments: list[dict]) -> dict:
     return {
         "total_payment_events": len(payments),
         "confirmed_payment_events": len(confirmed),
-        "confirmed_collection_total": sum_numbers(confirmed, "amount"),
-        "service_collection_total": sum_numbers(confirmed, "serviceAmount"),
-        "delivery_collection_total": sum_numbers(confirmed, "deliveryAmount"),
+        "confirmed_collection_total": sum(
+            (-1 if str(payment.get("transactionType") or "").lower() == "refund" else 1)
+            * float(payment.get("amount", 0) or 0)
+            for payment in confirmed
+        ),
+        "service_collection_total": sum(
+            (-1 if str(payment.get("transactionType") or "").lower() == "refund" else 1)
+            * float(payment.get("serviceAmount", 0) or 0)
+            for payment in confirmed
+        ),
+        "delivery_collection_total": sum(
+            (-1 if str(payment.get("transactionType") or "").lower() == "refund" else 1)
+            * float(payment.get("deliveryAmount", 0) or 0)
+            for payment in confirmed
+        ),
+        "refund_total": sum(
+            float(payment.get("amount", 0) or 0)
+            for payment in confirmed
+            if str(payment.get("transactionType") or "").lower() == "refund"
+        ),
         "status_counts": dict(Counter(payment.get("status", "unknown") for payment in payments)),
         "method_counts": dict(
             Counter(
@@ -516,7 +556,11 @@ def build_reconciliation_summary(
 ) -> dict:
     return {
         "customer_receipt_count": len(customer_payments),
-        "customer_receipt_total": sum_numbers(customer_payments, "totalAmount"),
+        "customer_receipt_total": sum(
+            (-1 if str(payment.get("transactionType") or "").lower() == "refund" else 1)
+            * float(payment.get("totalAmount", 0) or 0)
+            for payment in customer_payments
+        ),
         "allocation_count": len(allocations),
         "allocated_total": sum_numbers(allocations, "amount"),
         "ledger_entry_count": len(ledger_entries),
@@ -560,16 +604,37 @@ def build_wallet_activity_summary(transactions: list[dict]) -> dict:
 def build_expense_summary(monthly_expenses: list[dict]) -> dict:
     category_totals: dict[str, float] = defaultdict(float)
     entry_count = 0
+    direct_total = 0.0
     for document in monthly_expenses:
+        if "amount" in document:
+            entry_count += 1
+            amount = float(document.get("amount", 0) or 0)
+            direct_total += amount
+            category_totals[str(document.get("category") or "Uncategorized")] += amount
+            continue
         for entry in document.get("entries") or []:
             entry_count += 1
             category_totals[str(entry.get("category") or "Uncategorized")] += float(
                 entry.get("amount", 0) or 0
             )
+    dated_months = {
+                (document.get("expenseDate") or document.get("createdAt")).strftime("%Y-%m")
+                for document in monthly_expenses
+                if isinstance(
+                    document.get("expenseDate") or document.get("createdAt"),
+                    datetime,
+                )
+            }
+    legacy_months = {
+        (document.get("year"), document.get("monthNumber"))
+        for document in monthly_expenses
+        if document.get("year") and document.get("monthNumber")
+    }
     return {
-        "months_recorded": len(monthly_expenses),
+        "months_recorded": len(dated_months) + len(legacy_months),
         "expense_entry_count": entry_count,
-        "recorded_expense_total": sum_numbers(monthly_expenses, "totalExpenses"),
+        "recorded_expense_total": direct_total
+        + sum_numbers(monthly_expenses, "totalExpenses"),
         "category_totals": dict(category_totals),
     }
 
@@ -601,17 +666,29 @@ def build_catalog_summary(raw_context: dict) -> dict:
         for item_type in raw_context.get("global_item_types", [])
     }
     item_prices = raw_context.get("item_prices", [])
+    configured_services = raw_context.get("laundry_services", [])
+    service_names_by_key = {
+        service.get("serviceKey"): service.get("name") or service.get("slug")
+        for service in configured_services
+        if service.get("serviceKey")
+    }
     return {
-        "configured_service_count": len(raw_context.get("laundry_services", [])),
+        "configured_service_count": len(configured_services),
         "configured_item_count": len(item_prices),
         "active_add_on_count": sum(
             1 for add_on in raw_context.get("add_on_services", []) if add_on.get("isActive")
         ),
         "services": sorted(
             {
-                str(global_services.get(service.get("service")))
-                for service in raw_context.get("laundry_services", [])
+                str(
+                    global_services.get(service.get("service"))
+                    or service.get("name")
+                    or service.get("slug")
+                )
+                for service in configured_services
                 if global_services.get(service.get("service"))
+                or service.get("name")
+                or service.get("slug")
             }
         ),
         "items": [
@@ -619,7 +696,8 @@ def build_catalog_summary(raw_context: dict) -> dict:
                 "name": item.get("itemName")
                 or item.get("normalizedItemName")
                 or global_types.get(item.get("itemType")),
-                "service": global_services.get(item.get("service")),
+                "service": global_services.get(item.get("service"))
+                or service_names_by_key.get(item.get("serviceKey")),
                 "price": item.get("price"),
                 "active": item.get("isActive"),
             }
@@ -661,7 +739,11 @@ def build_context_summary(raw_context: dict, role: ContextRole) -> dict:
             if role == ContextRole.OWNER
             else build_staff_laundry_summary(laundry)
         ),
-        "workspace": build_workspace_summary(raw_context.get("workspace_settings")),
+        "workspace": build_workspace_summary(
+            raw_context.get("workspace_settings"),
+            raw_context.get("business_settings"),
+            raw_context.get("branch_settings"),
+        ),
         "customers": (
             build_customer_summary(customers)
             if role == ContextRole.OWNER

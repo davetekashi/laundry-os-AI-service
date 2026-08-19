@@ -195,6 +195,7 @@ def generate_report_file(payload: GenerateReportRequest) -> GenerateReportRespon
             payload.entity.value,
             start_date,
             end_date,
+            payload.business_id,
         )
     except ValueError as exc:
         raise GeneratedReportError(str(exc)) from exc
@@ -202,7 +203,13 @@ def generate_report_file(payload: GenerateReportRequest) -> GenerateReportRespon
         raise GeneratedReportError("Failed to load report data from MongoDB.") from exc
 
     dataset = build_enriched_report_dataset(payload.entity.value, report_source)
-    laundry_name = str(laundry.get("laundryName") or "Laundry")
+    business = report_source.related.get("business") or {}
+    laundry_name = str(
+        business.get("name")
+        or business.get("businessName")
+        or laundry.get("laundryName")
+        or "Laundry"
+    )
     period_label = report_period_label(payload)
 
     if payload.format == ReportFileFormat.PDF:
@@ -221,8 +228,17 @@ def generate_report_file(payload: GenerateReportRequest) -> GenerateReportRespon
         period_part = datetime.now(UTC).strftime("%Y-%m-%d")
     filename = f"{laundry_part}_{entity_part}_{period_part}.{payload.format.value}"
     now = datetime.now(UTC)
+    scope = report_source.related.get("scope")
+    if scope:
+        scope_path = (
+            f"business-{scope.business_id}"
+            if scope.business_id
+            else f"laundry-{scope.laundry_id}"
+        )
+    else:
+        scope_path = f"laundry-{payload.laundry_id or payload.business_id}"
     object_key = (
-        f"reports/{payload.laundry_id}/{entity_part}/{now:%Y/%m}/"
+        f"reports/{scope_path}/{entity_part}/{now:%Y/%m}/"
         f"{uuid4().hex}.{payload.format.value}"
     )
 

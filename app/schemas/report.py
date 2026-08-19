@@ -4,13 +4,10 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.scope import ScopeIdentifiers
 
-class WeeklySummaryReportRequest(BaseModel):
-    laundry_id: str = Field(
-        min_length=1,
-        description="MongoDB ObjectId string for the laundry whose report should be generated.",
-        examples=["6a18a4e625addd1b6e2406b7"],
-    )
+
+class WeeklySummaryReportRequest(ScopeIdentifiers):
     start_date: datetime = Field(
         description="Inclusive report window start in ISO 8601 format.",
         examples=["2026-06-09T00:00:00Z"],
@@ -31,7 +28,8 @@ class WeeklySummaryReportRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "laundry_id": "6a18a4e625addd1b6e2406b7",
+                "laundry_id": "6a54b1f08898ecb11ff0068f",
+                "business_id": "6a8496025e553211a5ecc1dd",
                 "start_date": "2026-06-09T00:00:00Z",
                 "end_date": "2026-06-16T23:59:59Z",
             }
@@ -46,7 +44,14 @@ class WeeklySummaryReportResponse(BaseModel):
     )
     laundry_id: str = Field(
         description="Laundry id used for report generation.",
-        examples=["6a18a4e625addd1b6e2406b7"],
+        examples=["6a54b1f08898ecb11ff0068f"],
+    )
+    business_id: str | None = Field(
+        default=None,
+        description="Resolved business id, or null for a legacy-only laundry.",
+    )
+    scope_mode: str = Field(
+        description="Resolved data mode: `legacy` or `migrated`.",
     )
     start_date: str = Field(
         description="Inclusive ISO 8601 report window start used for the query.",
@@ -59,7 +64,7 @@ class WeeklySummaryReportResponse(BaseModel):
     summary: str = Field(
         description="Plain-text weekly business summary ready for insertion into a document on the backend.",
         examples=[
-            "Royalty had an active week with 7 orders worth NGN 145,000 in total. Payments received during the period came to NGN 120,000, while 3 debt records remained outstanding with a combined balance of NGN 25,000."
+            "Protek Premium had an active week with 7 orders worth NGN 145,000 in total. Payments received during the period came to NGN 120,000, while 3 debt records remained outstanding with a combined balance of NGN 25,000."
         ],
     )
 
@@ -67,10 +72,12 @@ class WeeklySummaryReportResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "success": True,
-                "laundry_id": "6a18a4e625addd1b6e2406b7",
+                "laundry_id": "6a54b1f08898ecb11ff0068f",
+                "business_id": "6a8496025e553211a5ecc1dd",
+                "scope_mode": "migrated",
                 "start_date": "2026-06-09T00:00:00+00:00",
                 "end_date": "2026-06-16T23:59:59+00:00",
-                "summary": "Royalty had an active week with 7 orders worth NGN 145,000 in total. Payments received during the period came to NGN 120,000, while 3 debt records remained outstanding with a combined balance of NGN 25,000.",
+                "summary": "Protek Premium had an active week with 7 orders worth NGN 145,000 in total. Payments received during the period came to NGN 120,000, while 3 debt records remained outstanding with a combined balance of NGN 25,000.",
             }
         }
     }
@@ -87,17 +94,13 @@ class ReportTable(BaseModel):
     )
 
 
-class DebtRiskAnalysisRequest(BaseModel):
-    laundry_id: str = Field(
-        min_length=1,
-        description="MongoDB ObjectId string for the laundry whose current debt-risk report should be generated.",
-        examples=["6a18a4e625addd1b6e2406b7"],
-    )
+class DebtRiskAnalysisRequest(ScopeIdentifiers):
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "laundry_id": "6a18a4e625addd1b6e2406b7"
+                "laundry_id": "6a54b1f08898ecb11ff0068f",
+                "business_id": "6a8496025e553211a5ecc1dd"
             }
         }
     }
@@ -110,7 +113,14 @@ class DebtRiskAnalysisResponse(BaseModel):
     )
     laundry_id: str = Field(
         description="Laundry id used for debt-risk report generation.",
-        examples=["6a18a4e625addd1b6e2406b7"],
+        examples=["6a54b1f08898ecb11ff0068f"],
+    )
+    business_id: str | None = Field(
+        default=None,
+        description="Resolved business id, or null for a legacy-only laundry.",
+    )
+    scope_mode: str = Field(
+        description="Resolved data mode: `legacy` or `migrated`.",
     )
     generated_at: str = Field(
         description="UTC timestamp when the current debt-risk report was generated.",
@@ -130,7 +140,9 @@ class DebtRiskAnalysisResponse(BaseModel):
         "json_schema_extra": {
             "example": {
                 "success": True,
-                "laundry_id": "6a18a4e625addd1b6e2406b7",
+                "laundry_id": "6a54b1f08898ecb11ff0068f",
+                "business_id": "6a8496025e553211a5ecc1dd",
+                "scope_mode": "migrated",
                 "generated_at": "2026-06-17T14:30:00+00:00",
                 "summary": "Debt exposure during this period is concentrated in a few customers, with the largest balances already aging past one week. The current outstanding amount remains manageable, but follow-up should focus first on the oldest and highest-value debts.",
                 "table": {
@@ -176,12 +188,7 @@ SNAPSHOT_REPORT_ENTITIES = {
 }
 
 
-class GenerateReportRequest(BaseModel):
-    laundry_id: str = Field(
-        min_length=1,
-        description="MongoDB ObjectId of the laundry that owns the requested report data.",
-        examples=["6a18a4e625addd1b6e2406b7"],
-    )
+class GenerateReportRequest(ScopeIdentifiers):
     entity: ReportEntity = Field(
         description="Business entity to report on. Arbitrary MongoDB collection names are not accepted.",
         examples=["orders"],
@@ -218,14 +225,16 @@ class GenerateReportRequest(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "laundry_id": "6a18a4e625addd1b6e2406b7",
+                    "laundry_id": "6a54b1f08898ecb11ff0068f",
+                    "business_id": "6a8496025e553211a5ecc1dd",
                     "entity": "orders",
                     "start_date": "2026-07-01T00:00:00Z",
                     "end_date": "2026-07-23T23:59:59Z",
                     "format": "pdf",
                 },
                 {
-                    "laundry_id": "6a18a4e625addd1b6e2406b7",
+                    "laundry_id": "6a54b1f08898ecb11ff0068f",
+                    "business_id": "6a8496025e553211a5ecc1dd",
                     "entity": "wallet",
                     "format": "xlsx",
                 },
@@ -247,7 +256,7 @@ class GenerateReportResponse(BaseModel):
             "example": {
                 "success": True,
                 "filename": "royalty_orders_2026-07-01_to_2026-07-23.pdf",
-                "object_key": "reports/6a18a4e625addd1b6e2406b7/orders/2026/07/uuid.pdf",
+                "object_key": "reports/business-6a8496025e553211a5ecc1dd/orders/2026/07/uuid.pdf",
                 "download_url": "https://example.r2.cloudflarestorage.com/...",
             }
         }
