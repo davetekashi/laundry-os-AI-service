@@ -8,7 +8,8 @@ from app.schemas.customer import (
 )
 from app.services.customer_parser import parse_customers_with_llm
 from app.services.ocr import extract_image_text
-from app.services.source_image import SourceImageError, download_source_image
+from app.services.source_file import SourceFileError, download_source_file
+from app.services.tabular_file import extract_tabular_text
 
 
 class CustomerExtractionError(Exception):
@@ -81,27 +82,39 @@ async def extract_customers(file_urls: list[str]) -> CustomerExtractionResponse:
 
     for file_url in file_urls:
         try:
-            file_bytes, suffix = await download_source_image(file_url)
-        except SourceImageError as exc:
+            source_file = await download_source_file(file_url)
+        except SourceFileError as exc:
             raise CustomerExtractionError(f"{str(exc)} URL: '{file_url}'.") from exc
 
-        with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as temp_file:
-            temp_file.write(file_bytes)
-            temp_file.flush()
-
+        if source_file.kind == "image":
+            with tempfile.NamedTemporaryFile(
+                delete=True, suffix=source_file.suffix
+            ) as temp_file:
+                temp_file.write(source_file.content)
+                temp_file.flush()
+                try:
+                    raw_ocr_text = extract_image_text(
+                        temp_file.name,
+                        extraction_instruction=CUSTOMER_OCR_INSTRUCTION,
+                    )
+                except Exception as exc:
+                    raise CustomerExtractionError(
+                        f"OCR step failed for '{file_url}': {str(exc)}"
+                    ) from exc
+        else:
             try:
-                raw_ocr_text = extract_image_text(
-                    temp_file.name,
-                    extraction_instruction=CUSTOMER_OCR_INSTRUCTION,
+                raw_ocr_text = extract_tabular_text(
+                    source_file.content,
+                    source_file.kind,
                 )
             except Exception as exc:
                 raise CustomerExtractionError(
-                    f"OCR step failed for '{file_url}': {str(exc)}"
+                    f"Spreadsheet reading failed for '{file_url}': {str(exc)}"
                 ) from exc
 
         raw_ocr_texts.append(raw_ocr_text)
 
-    combined_ocr_text = "\n\n--- NEXT IMAGE ---\n\n".join(raw_ocr_texts)
+    combined_ocr_text = "\n\n--- NEXT FILE ---\n\n".join(raw_ocr_texts)
 
     try:
         customers, unresolved_records = parse_customers_with_llm(combined_ocr_text)
@@ -113,7 +126,7 @@ async def extract_customers(file_urls: list[str]) -> CustomerExtractionResponse:
 
     if not customers and not unresolved_records:
         raise CustomerExtractionError(
-            "No customer records could be extracted from the uploaded image(s)."
+            "No customer records could be extracted from the uploaded file(s)."
         )
 
     return CustomerExtractionResponse(

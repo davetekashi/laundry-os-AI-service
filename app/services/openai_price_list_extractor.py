@@ -105,6 +105,52 @@ def encode_image(file_path: str) -> str:
     return base64.b64encode(Path(file_path).read_bytes()).decode("utf-8")
 
 
+def _clean_extraction_payload(
+    payload: PriceListVisionExtraction,
+    available_services: list[str],
+    raw_text_override: str | None = None,
+) -> PriceListImageExtraction:
+    indexed_services = {
+        f"service_{index}": service
+        for index, service in enumerate(available_services)
+    }
+    cleaned_items: list[ExtractedPriceListItem] = []
+    for item in payload.items:
+        item_name = clean_item_name(item.item_name)
+        price_text = item.price_text.strip()
+        if not is_valid_item_name(item_name) or not price_text:
+            continue
+        if set(item.service_eligibility) != set(indexed_services):
+            raise RuntimeError(
+                "OpenAI price-list extraction omitted one or more service decisions."
+            )
+        cleaned_items.append(
+            ExtractedPriceListItem(
+                item_name=item_name,
+                price=parse_single_numeric_price(price_text),
+                price_text=price_text,
+                services=[
+                    service
+                    for service_key, service in indexed_services.items()
+                    if item.service_eligibility[service_key]
+                ],
+            )
+        )
+
+    raw_ocr_text = clean_ocr_text(raw_text_override or payload.raw_ocr_text)
+    if not raw_ocr_text:
+        raise RuntimeError("OpenAI price-list extraction returned no transcription.")
+    if not cleaned_items:
+        raise RuntimeError("OpenAI price-list extraction returned no valid item rows.")
+
+    laundry_name = payload.laundry_name.strip() if payload.laundry_name else None
+    return PriceListImageExtraction(
+        laundry_name=laundry_name or None,
+        raw_ocr_text=raw_ocr_text,
+        items=cleaned_items,
+    )
+
+
 def extract_price_list_image(
     file_path: str,
     available_services: list[str],
@@ -158,40 +204,52 @@ def extract_price_list_image(
         raise RuntimeError("OpenAI price-list extraction returned an empty response.")
 
     payload = PriceListVisionExtraction.model_validate_json(content)
-    cleaned_items: list[ExtractedPriceListItem] = []
+    return _clean_extraction_payload(payload, available_services)
 
-    for item in payload.items:
-        item_name = clean_item_name(item.item_name)
-        price_text = item.price_text.strip()
-        if not is_valid_item_name(item_name) or not price_text:
-            continue
-        if set(item.service_eligibility) != set(indexed_services):
-            raise RuntimeError(
-                "OpenAI price-list extraction omitted one or more service decisions."
-            )
 
-        cleaned_items.append(
-            ExtractedPriceListItem(
-                item_name=item_name,
-                price=parse_single_numeric_price(price_text),
-                price_text=price_text,
-                services=[
-                    service
-                    for service_key, service in indexed_services.items()
-                    if item.service_eligibility[service_key]
-                ],
-            )
-        )
-
-    raw_ocr_text = clean_ocr_text(payload.raw_ocr_text)
-    if not raw_ocr_text:
-        raise RuntimeError("OpenAI price-list extraction returned no transcription.")
-    if not cleaned_items:
-        raise RuntimeError("OpenAI price-list extraction returned no valid item rows.")
-
-    laundry_name = payload.laundry_name.strip() if payload.laundry_name else None
-    return PriceListImageExtraction(
-        laundry_name=laundry_name or None,
-        raw_ocr_text=raw_ocr_text,
-        items=cleaned_items,
+def extract_price_list_text(
+    source_text: str,
+    available_services: list[str],
+) -> PriceListImageExtraction:
+    settings = get_settings()
+    client = OpenAI(api_key=settings.openai_api_key)
+    indexed_services = {
+        f"service_{index}": service
+        for index, service in enumerate(available_services)
+    }
+    prompt = (
+        "Digitize the following text exported deterministically from a CSV or XLSX laundry price list. "
+        "Tabs separate spreadsheet cells, lines preserve rows, and SHEET markers identify worksheets.\n\n"
+        f"{PRICE_LIST_EXTRACTION_PROMPT}\n\n"
+        f"{SERVICE_INFERENCE_PROMPT}\n\n"
+        "Use the supplied spreadsheet text verbatim as raw_ocr_text.\n\n"
+        "SERVICE KEY MAP:\n"
+        f"{json.dumps(indexed_services, ensure_ascii=True)}\n\n"
+        "SPREADSHEET TEXT:\n"
+        f"{source_text}"
+    )
+    response = client.chat.completions.create(
+        model=settings.openai_matching_model,
+        response_format=build_response_format(available_services),
+        max_completion_tokens=16384,
+        temperature=0,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a precise laundry spreadsheet digitization and multi-label "
+                    "service eligibility system."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+    )
+    content = response.choices[0].message.content
+    if not content:
+        raise RuntimeError("OpenAI price-list extraction returned an empty response.")
+    payload = PriceListVisionExtraction.model_validate_json(content)
+    return _clean_extraction_payload(
+        payload,
+        available_services,
+        raw_text_override=source_text,
     )

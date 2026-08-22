@@ -13,8 +13,8 @@ app = FastAPI(
     description=(
         "AI-powered endpoints for Laundry OS.\n\n"
         "This service currently supports:\n"
-        "- Laundry price list digitization from Cloudflare-hosted image URLs.\n"
-        "- Customer record extraction from one or more Cloudflare-hosted images.\n"
+        "- Laundry price list digitization from Cloudflare-hosted image, CSV, or XLSX URLs.\n"
+        "- Customer record extraction from one or more Cloudflare-hosted image, CSV, or XLSX files.\n"
         "- Role-scoped context preparation for owner and staff users using MongoDB-backed business data.\n"
         "- Chat responses grounded only in the matching role-scoped in-memory laundry context.\n\n"
         "- Entity-specific PDF and Excel reports uploaded securely to Cloudflare R2.\n\n"
@@ -27,7 +27,7 @@ app = FastAPI(
         "Important notes:\n"
         "- `/api/v1/chat` does not build context on demand. Matching business-scope-and-role context must already be prepared.\n"
         "- Prepared context is stored in memory only and is lost on service restart.\n"
-        "- The price-list endpoint expects a Cloudflare-accessible image URL, not a file upload."
+        "- File-processing endpoints expect Cloudflare-accessible URLs, not multipart file uploads."
     ),
     openapi_tags=[
         {

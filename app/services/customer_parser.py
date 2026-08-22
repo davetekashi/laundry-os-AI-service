@@ -20,7 +20,7 @@ def parse_customers_with_llm(
     client = OpenAI(api_key=settings.openai_api_key)
 
     prompt = (
-        "Extract customer records from the OCR text of one or more laundry customer-list images.\n"
+        "Extract customer records from text obtained from one or more laundry customer-list images, CSV files, or XLSX files.\n"
         "Return strict JSON only with this shape:\n"
         '{"records": [{"raw_value": string, "full_name": string|null, '
         '"phone_number": string|null, "email": string|null, "reason": string|null}]}\n\n'
@@ -33,7 +33,8 @@ def parse_customers_with_llm(
         "- raw_value must contain the source row or closest source text fragment for that record.\n"
         "- Set reason only when the name or phone number is missing or uncertain; otherwise return null.\n"
         "- Ignore headings, column labels, page numbers, and other non-customer text.\n"
-        "- Text between NEXT IMAGE markers comes from separate images and may contain overlapping rows.\n\n"
+        "- Tabs separate spreadsheet cells. SHEET markers identify Excel worksheets.\n"
+        "- Text between NEXT FILE markers comes from separate files and may contain overlapping rows.\n\n"
         f"OCR text:\n{raw_ocr_text}"
     )
 

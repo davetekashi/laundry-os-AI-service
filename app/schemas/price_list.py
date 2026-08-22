@@ -3,8 +3,11 @@ from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 class NormalizePriceListRequest(BaseModel):
     file_url: HttpUrl | list[HttpUrl] = Field(
-        description="Cloudflare-accessible image URL or array of image URLs for the laundry price list to normalize.",
-        examples=["https://imagedelivery.net/account-id/laundry-price-list-1/public"],
+        description=(
+            "Cloudflare-accessible image, CSV, or XLSX URL, or an array containing any supported mix, "
+            "for the laundry price list to normalize."
+        ),
+        examples=["https://files.example.com/laundry-price-list.xlsx"],
     )
     services: list[str] = Field(
         min_length=1,
@@ -44,8 +47,8 @@ class NormalizePriceListRequest(BaseModel):
         "json_schema_extra": {
             "example": {
                 "file_url": [
-                    "https://imagedelivery.net/account-id/laundry-price-list-1/public",
-                    "https://imagedelivery.net/account-id/laundry-price-list-2/public"
+                    "https://files.example.com/laundry-price-list.xlsx",
+                    "https://imagedelivery.net/account-id/laundry-price-list-page-2/public"
                 ],
                 "services": ["washing", "ironing", "premium dry cleaning"]
             }
@@ -162,7 +165,7 @@ class NormalizedPriceListResponse(BaseModel):
     )
     laundry_name: str | None = Field(
         default=None,
-        description="Laundry/business name detected from the source image when available.",
+        description="Laundry/business name detected from the source file when available.",
         examples=["1124 Laundry/Dry Cleaners"],
     )
     currency: str = Field(
@@ -170,7 +173,7 @@ class NormalizedPriceListResponse(BaseModel):
         examples=["NGN"],
     )
     source_file_urls: list[HttpUrl] = Field(
-        description="Original Cloudflare image URLs used for the normalization request.",
+        description="Original Cloudflare image, CSV, or XLSX URLs used for the normalization request.",
     )
     items: list[ExtractedPriceListItem] = Field(
         description=(
@@ -179,7 +182,9 @@ class NormalizedPriceListResponse(BaseModel):
         ),
     )
     raw_ocr_text: str = Field(
-        description="Raw OCR text returned from the vision extraction step for debugging and audit purposes.",
+        description=(
+            "Raw OCR text for images or deterministic row text for CSV/XLSX files, returned for debugging and audit purposes."
+        ),
     )
 
     model_config = {

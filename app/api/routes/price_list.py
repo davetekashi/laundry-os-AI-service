@@ -12,21 +12,22 @@ router = APIRouter(tags=["price-lists"])
     response_model=NormalizedPriceListResponse,
     summary="Digitize item names and prices from a laundry price list",
     description=(
-        "Accepts one or more Cloudflare-hosted image URLs for a laundry price list, performs OCR on each image, "
+        "Accepts one Cloudflare-hosted image, CSV, or XLSX URL, or an array containing any supported mix. "
+        "Images are read with vision OCR; CSV and XLSX rows are read deterministically. "
         "and returns the item names and prices found in the source list. The request must also include the "
         "laundry's currently configured `services`; the AI assigns each item only applicable names from that "
         "list and never falls back to a predefined service catalogue. Item names are preserved as supplied "
         "by the laundry owner and are not mapped to predefined Laundry OS item types. Each item includes the "
         "original `price_text`; `price` is null when the source contains multiple or non-numeric values.\n\n"
-        "Use this endpoint to digitize a laundry owner's existing paper or image-based price list."
+        "Use this endpoint to digitize a laundry owner's existing paper, image, CSV, or Excel price list."
     ),
     responses={
         400: {
-            "description": "Client-side processing error such as download, OCR, or row-parsing failure.",
+            "description": "Client-side processing error such as download, file reading, OCR, or row-parsing failure.",
             "content": {
                 "application/json": {
                     "example": {
-                        "detail": "No price list rows could be extracted from the uploaded image."
+                        "detail": "No price list rows could be extracted from the uploaded files."
                     }
                 }
             },

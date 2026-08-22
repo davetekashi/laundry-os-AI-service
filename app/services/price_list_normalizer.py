@@ -5,11 +5,15 @@ from app.schemas.price_list import (
     ExtractedPriceListItem,
     NormalizedPriceListResponse,
 )
-from app.services.openai_price_list_extractor import extract_price_list_image
+from app.services.openai_price_list_extractor import (
+    extract_price_list_image,
+    extract_price_list_text,
+)
 from app.services.parser import (
     has_sufficient_extraction_coverage,
 )
-from app.services.source_image import SourceImageError, download_source_image
+from app.services.source_file import SourceFileError, download_source_file
+from app.services.tabular_file import extract_tabular_text
 
 
 class PriceListNormalizationError(Exception):
@@ -34,22 +38,38 @@ async def normalize_price_list(
 
     for file_url in file_urls:
         try:
-            file_bytes, suffix = await download_source_image(file_url)
-        except SourceImageError as exc:
+            source_file = await download_source_file(file_url)
+        except SourceFileError as exc:
             raise PriceListNormalizationError(str(exc)) from exc
 
-        with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as temp_file:
-            temp_file.write(file_bytes)
-            temp_file.flush()
-
+        if source_file.kind == "image":
+            with tempfile.NamedTemporaryFile(
+                delete=True, suffix=source_file.suffix
+            ) as temp_file:
+                temp_file.write(source_file.content)
+                temp_file.flush()
+                try:
+                    extraction = extract_price_list_image(
+                        temp_file.name,
+                        available_services,
+                    )
+                except Exception as exc:
+                    raise PriceListNormalizationError(
+                        f"OpenAI image extraction failed for '{file_url}': {str(exc)}"
+                    ) from exc
+        else:
             try:
-                extraction = extract_price_list_image(
-                    temp_file.name,
+                source_text = extract_tabular_text(
+                    source_file.content,
+                    source_file.kind,
+                )
+                extraction = extract_price_list_text(
+                    source_text,
                     available_services,
                 )
             except Exception as exc:
                 raise PriceListNormalizationError(
-                    f"OpenAI image extraction failed for '{file_url}': {str(exc)}"
+                    f"Spreadsheet extraction failed for '{file_url}': {str(exc)}"
                 ) from exc
 
         raw_ocr_text = extraction.raw_ocr_text
@@ -59,8 +79,8 @@ async def normalize_price_list(
         if not has_sufficient_extraction_coverage(raw_ocr_text, parsed_rows):
             raise PriceListNormalizationError(
                 f"Price list extraction was incomplete for '{file_url}'. "
-                "The image contains substantially more price records than were structured; "
-                "please retry with a clearer image."
+                "The source contains substantially more price records than were structured; "
+                "please retry with a clearer or cleaner file."
             )
 
         # Preserve duplicate rows printed on one page, but remove overlap from later images.
@@ -75,10 +95,10 @@ async def normalize_price_list(
 
     if not all_parsed_rows:
         raise PriceListNormalizationError(
-            "No price list rows could be extracted from the uploaded images."
+            "No price list rows could be extracted from the uploaded files."
         )
 
-    raw_ocr_text = "\n\n--- NEXT IMAGE ---\n\n".join(all_raw_ocr_texts)
+    raw_ocr_text = "\n\n--- NEXT FILE ---\n\n".join(all_raw_ocr_texts)
     settings = get_settings()
 
     return NormalizedPriceListResponse(

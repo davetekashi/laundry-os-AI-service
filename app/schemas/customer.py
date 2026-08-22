@@ -4,14 +4,14 @@ from pydantic import BaseModel, Field, HttpUrl, model_validator
 class ExtractCustomersRequest(BaseModel):
     file_url: HttpUrl | list[HttpUrl] = Field(
         description=(
-            "Cloudflare-accessible customer-list image URL or array of image URLs. "
-            "Use an array when the customer list spans multiple images."
+            "Cloudflare-accessible customer-list image, CSV, or XLSX URL, or an array containing "
+            "any supported mix."
         ),
         examples=[
             "https://imagedelivery.net/account-id/customer-list-1/public",
             [
-                "https://imagedelivery.net/account-id/customer-list-1/public",
-                "https://imagedelivery.net/account-id/customer-list-2/public",
+                "https://files.example.com/customer-list.xlsx",
+                "https://files.example.com/customer-list.csv",
             ],
         ],
     )
@@ -31,12 +31,12 @@ class ExtractCustomersRequest(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "file_url": "https://imagedelivery.net/account-id/customer-list-1/public"
+                    "file_url": "https://files.example.com/customer-list.xlsx"
                 },
                 {
                     "file_url": [
                         "https://imagedelivery.net/account-id/customer-list-1/public",
-                        "https://imagedelivery.net/account-id/customer-list-2/public",
+                        "https://files.example.com/customer-list.csv",
                     ]
                 },
             ]
@@ -47,7 +47,7 @@ class ExtractCustomersRequest(BaseModel):
 class ExtractedCustomer(BaseModel):
     full_name: str = Field(
         min_length=1,
-        description="Customer's full name as extracted from the source image.",
+        description="Customer's full name as extracted from the source file.",
         examples=["John Doe"],
     )
     phone_number: str = Field(
@@ -59,7 +59,7 @@ class ExtractedCustomer(BaseModel):
     )
     email: str | None = Field(
         default=None,
-        description="Customer email address when present in the source image; otherwise null.",
+        description="Customer email address when present in the source file; otherwise null.",
         examples=["john@example.com"],
     )
 
@@ -81,7 +81,7 @@ class UnresolvedCustomerRecord(BaseModel):
 class CustomerExtractionResponse(BaseModel):
     success: bool = True
     source_file_urls: list[HttpUrl] = Field(
-        description="Cloudflare image URLs processed by this request."
+        description="Cloudflare image, CSV, or XLSX URLs processed by this request."
     )
     customers: list[ExtractedCustomer] = Field(
         description="Customer records containing both a full name and phone number."
@@ -90,7 +90,7 @@ class CustomerExtractionResponse(BaseModel):
         description="Incomplete or uncertain records that require manual review."
     )
     raw_ocr_text: str = Field(
-        description="Combined raw OCR text for debugging and audit purposes."
+        description="Combined image OCR or deterministic CSV/XLSX row text for debugging and audit purposes."
     )
 
     model_config = {

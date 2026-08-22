@@ -12,9 +12,10 @@ router = APIRouter(tags=["customers"])
 @router.post(
     "/customers/extract",
     response_model=CustomerExtractionResponse,
-    summary="Extract customer records from one or more customer-list images",
+    summary="Extract customer records from image, CSV, or XLSX customer lists",
     description=(
-        "Accepts one Cloudflare-hosted customer-list image URL or an array of URLs, performs OCR, "
+        "Accepts one Cloudflare-hosted image, CSV, or XLSX URL, or an array containing any supported mix. "
+        "Images use vision OCR, while CSV and XLSX rows are read deterministically before structured extraction. "
         "and returns structured customer records. A valid customer requires a full name and phone "
         "number; email is optional and is returned as null when absent. Overlapping records across "
         "multiple images are deduplicated by phone number. Incomplete, uncertain, or conflicting "
@@ -23,11 +24,11 @@ router = APIRouter(tags=["customers"])
     ),
     responses={
         400: {
-            "description": "The image could not be downloaded, read, or converted into customer records.",
+            "description": "A source file could not be downloaded, read, or converted into customer records.",
             "content": {
                 "application/json": {
                     "example": {
-                        "detail": "No customer records could be extracted from the uploaded image(s)."
+                        "detail": "No customer records could be extracted from the uploaded file(s)."
                     }
                 }
             },
@@ -57,17 +58,24 @@ async def extract_customers_endpoint(
                     },
                 },
                 "multiple_images": {
-                    "summary": "Multiple customer-list images",
+                    "summary": "Multiple files or mixed formats",
                     "description": (
-                        "Use an array under the same `file_url` field when the customer list "
-                        "spans multiple images."
+                        "Use an array under the same `file_url` field for multiple images, CSV/XLSX files, or mixed formats."
                     ),
                     "value": {
                         "file_url": [
                             "https://imagedelivery.net/account-id/customer-list-1/public",
-                            "https://imagedelivery.net/account-id/customer-list-2/public",
+                            "https://files.example.com/customer-list.xlsx",
                         ]
                     },
+                },
+                "csv_file": {
+                    "summary": "One CSV customer list",
+                    "value": {"file_url": "https://files.example.com/customer-list.csv"},
+                },
+                "xlsx_file": {
+                    "summary": "One Excel customer list",
+                    "value": {"file_url": "https://files.example.com/customer-list.xlsx"},
                 },
             }
         ),
