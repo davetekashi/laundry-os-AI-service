@@ -6,6 +6,7 @@ from app.schemas.price_list import (
     NormalizedPriceListResponse,
 )
 from app.services.openai_price_list_extractor import (
+    PriceListDocumentRejectedError,
     extract_price_list_image,
     extract_price_list_text,
 )
@@ -53,6 +54,8 @@ async def normalize_price_list(
                         temp_file.name,
                         available_services,
                     )
+                except PriceListDocumentRejectedError as exc:
+                    raise PriceListNormalizationError(str(exc)) from exc
                 except Exception as exc:
                     raise PriceListNormalizationError(
                         f"OpenAI image extraction failed for '{file_url}': {str(exc)}"
@@ -67,6 +70,8 @@ async def normalize_price_list(
                     source_text,
                     available_services,
                 )
+            except PriceListDocumentRejectedError as exc:
+                raise PriceListNormalizationError(str(exc)) from exc
             except Exception as exc:
                 raise PriceListNormalizationError(
                     f"Spreadsheet extraction failed for '{file_url}': {str(exc)}"

@@ -108,6 +108,8 @@ class PriceListVisionItem(BaseModel):
 
 
 class PriceListVisionExtraction(BaseModel):
+    is_price_list: bool
+    rejection_reason: str | None
     laundry_name: str | None
     raw_ocr_text: str = Field(min_length=1)
     items: list[PriceListVisionItem]

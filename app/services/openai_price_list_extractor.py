@@ -20,10 +20,13 @@ from app.services.parser import (
 
 
 PRICE_LIST_EXTRACTION_PROMPT = """
-Digitize this laundry price-list image into structured data.
+Inspect and, only when appropriate, digitize the supplied source document. The source may be a laundry
+price list, or it may be an unrelated document that must be rejected.
 
 Requirements:
-- Read the image directly and extract every genuine item/service and its corresponding price.
+- Set is_price_list to true only when the source visibly contains genuine laundry item/service labels paired with prices.
+- If the source is not a laundry item price list, set is_price_list to false, provide a concise rejection_reason, and return an empty items array.
+- If the source is a genuine price list, set is_price_list to true, set rejection_reason to null, and extract every visible item/service and its corresponding price.
 - Handle ordinary, side-by-side, and multi-column tables. Associate each price only with the item in the same column.
 - Preserve each item_name exactly as printed, apart from obvious OCR spacing.
 - item_name must contain only the actual item/service value. Never add Row 1, Line 2, Item 3, bullet numbers, column labels, explanations, or commentary.
@@ -33,9 +36,14 @@ Requirements:
 - Keep separately printed duplicate records, including similar records in male and female columns.
 - Ignore headings, addresses, phone numbers, emails, slogans, and table labels as item records.
 - Do not invent, rename, categorize, normalize, combine, or match items.
+- Never use prior knowledge or create plausible laundry items and prices that are absent from the source.
 - raw_ocr_text must be a faithful transcription only. Do not include analysis, reasoning, row numbers, line labels, markdown commentary, or <think> content.
 - Return the laundry/business name only when it is visibly identifiable; otherwise return null.
 """.strip()
+
+
+class PriceListDocumentRejectedError(RuntimeError):
+    pass
 
 
 SERVICE_INFERENCE_PROMPT = """
@@ -72,6 +80,8 @@ def build_response_format(available_services: list[str]) -> dict:
             "schema": {
                 "type": "object",
                 "properties": {
+                    "is_price_list": {"type": "boolean"},
+                    "rejection_reason": {"type": ["string", "null"]},
                     "laundry_name": {"type": ["string", "null"]},
                     "raw_ocr_text": {"type": "string"},
                     "items": {
@@ -94,7 +104,13 @@ def build_response_format(available_services: list[str]) -> dict:
                         },
                     },
                 },
-                "required": ["laundry_name", "raw_ocr_text", "items"],
+                "required": [
+                    "is_price_list",
+                    "rejection_reason",
+                    "laundry_name",
+                    "raw_ocr_text",
+                    "items",
+                ],
                 "additionalProperties": False,
             },
         },
@@ -110,6 +126,15 @@ def _clean_extraction_payload(
     available_services: list[str],
     raw_text_override: str | None = None,
 ) -> PriceListImageExtraction:
+    if not payload.is_price_list:
+        raise PriceListDocumentRejectedError(
+            "The uploaded file does not appear to contain a laundry item price list."
+        )
+    if not payload.items:
+        raise PriceListDocumentRejectedError(
+            "The uploaded file does not contain genuine item and price records."
+        )
+
     indexed_services = {
         f"service_{index}": service
         for index, service in enumerate(available_services)
@@ -218,7 +243,7 @@ def extract_price_list_text(
         for index, service in enumerate(available_services)
     }
     prompt = (
-        "Digitize the following text exported deterministically from a CSV or XLSX laundry price list. "
+        "Inspect the following text exported deterministically from a CSV or XLSX source file. "
         "Tabs separate spreadsheet cells, lines preserve rows, and SHEET markers identify worksheets.\n\n"
         f"{PRICE_LIST_EXTRACTION_PROMPT}\n\n"
         f"{SERVICE_INFERENCE_PROMPT}\n\n"

@@ -27,7 +27,7 @@ router = APIRouter(tags=["price-lists"])
             "content": {
                 "application/json": {
                     "example": {
-                        "detail": "No price list rows could be extracted from the uploaded files."
+                        "detail": "The uploaded file does not appear to contain a laundry item price list."
                     }
                 }
             },
