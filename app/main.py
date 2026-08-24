@@ -19,7 +19,7 @@ app = FastAPI(
         "- Chat responses grounded only in the matching role-scoped in-memory laundry context.\n\n"
         "- Entity-specific PDF and Excel reports uploaded securely to Cloudflare R2.\n\n"
         "Integration flow for backend teams:\n"
-        "1. Call `POST /api/v1/context/prepare` when a laundry user logs in, using their authenticated `role` and branch `laundry_id`; include `business_id` for migrated businesses.\n"
+        "1. Call `POST /api/v1/context/prepare` with only `business_id` for business-wide owner context, or with a branch `laundry_id` for branch context; always include the authenticated `role`.\n"
         "2. Call `POST /api/v1/chat` using the same scope identifiers and authenticated `role`.\n"
         "3. Call `POST /api/v1/price-lists/normalize` whenever a laundry submits an item-price image for normalization.\n\n"
         "4. Call `POST /api/v1/customers/extract` to extract customer records from customer-list images.\n\n"

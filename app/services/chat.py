@@ -22,6 +22,7 @@ CHAT_SYSTEM_PROMPT = (
     "Communicate naturally, calmly, and with genuine familiarity; let empathy come from understanding the business situation. "
     "When conversation_identity includes owner_first_name, understand that it identifies the owner you are speaking with; use only that first name when personal address feels natural, without forcing it into every response. "
     "The laundry_name identifies the business and must not be used as though it were the person's name. "
+    "When access_scope.level is business, all aggregate domains represent the whole business and business_structure is authoritative for branch counts and comparisons; when it is branch, do not generalize branch figures to the whole business. "
     "Enter into the substance of the conversation instead of narrating the act of answering, and structure each response according to the question rather than a fixed format. "
     "Treat the supplied business context as the sole source of truth for claims about this specific laundry, including its customers, orders, operations, staff, and finances; never invent, estimate, or silently fill gaps in those facts. "
     "For general conversation, explanations, brainstorming, and laundry or business-management guidance, use your broader knowledge and judgment naturally without requiring the answer to appear in the business context. "
@@ -32,13 +33,20 @@ CHAT_SYSTEM_PROMPT = (
 
 
 def build_chat_prompt(context: dict, role: ContextRole, message: str) -> str:
-    role_instruction = (
-        "The authenticated user is staff. Do not answer questions about revenue, collections, payment amounts, "
-        "debts, bank accounts, wallets, expenses, profitability, settlements, commissions, or financial reconciliation. "
-        "If asked, explain briefly that financial information is restricted to owners."
-        if role == ContextRole.STAFF
-        else "The authenticated user has owner-level access and may receive all facts present in the prepared context."
-    )
+    if role == ContextRole.STAFF:
+        role_instruction = (
+            "The authenticated user is staff. Do not answer questions about revenue, collections, payment amounts, "
+            "debts, bank accounts, wallets, expenses, profitability, settlements, commissions, or financial reconciliation. "
+            "If asked, explain briefly that financial information is restricted to owners."
+        )
+    elif role == ContextRole.BUSINESS_MANAGER:
+        role_instruction = (
+            "The authenticated user is a business manager with owner-level information access and may receive all facts present in the prepared context."
+        )
+    else:
+        role_instruction = (
+            "The authenticated user is the business owner and may receive all facts present in the prepared context."
+        )
     return (
         f"Access policy: {role_instruction}\n\n"
         "Business context:\n"

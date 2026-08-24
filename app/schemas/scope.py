@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ScopeIdentifiers(BaseModel):
@@ -18,6 +18,20 @@ class ScopeIdentifiers(BaseModel):
         ),
         examples=["6b18a4e625addd1b6e2406b8"],
     )
+
+    @field_validator("laundry_id", "business_id", mode="before")
+    @classmethod
+    def normalize_optional_identifier(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str) and value.strip().casefold() in {
+            "",
+            "null",
+            "none",
+            "undefined",
+        }:
+            return None
+        return value.strip() if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def validate_scope_identifiers(self):

@@ -59,6 +59,43 @@ def build_laundry_summary(laundry: dict) -> dict:
     }
 
 
+def build_business_scope_profile(
+    business: dict,
+    laundries: list[dict],
+    branch_count: int,
+    include_financial: bool,
+) -> dict:
+    profile = {
+        "scope_level": "business",
+        "laundry_name": business.get("name")
+        or business.get("businessName")
+        or (laundries[0].get("laundryName") if laundries else None),
+        "business_name": business.get("name") or business.get("businessName"),
+        "total_branches": branch_count,
+        "status": business.get("status"),
+        "created_at": isoformat_or_none(business.get("createdAt")),
+        "updated_at": isoformat_or_none(business.get("updatedAt")),
+    }
+    if include_financial:
+        profile.update(
+            {
+                "commission_balance_due": sum_numbers(
+                    laundries, "commissionBalanceDue"
+                ),
+                "offline_commission_accrued": sum_numbers(
+                    laundries, "offlineCommissionAccrued"
+                ),
+                "offline_commission_settled": sum_numbers(
+                    laundries, "offlineCommissionSettled"
+                ),
+                "offline_commission_balance_due": sum_numbers(
+                    laundries, "offlineCommissionBalanceDue"
+                ),
+            }
+        )
+    return profile
+
+
 def build_bank_account_summary(bank_account: dict | None) -> dict | None:
     if not bank_account:
         return None
@@ -74,12 +111,23 @@ def build_bank_account_summary(bank_account: dict | None) -> dict | None:
     }
 
 
+def build_bank_accounts_summary(bank_accounts: list[dict]) -> dict:
+    return {
+        "total_bank_accounts": len(bank_accounts),
+        "default_account_count": sum(
+            1 for account in bank_accounts if account.get("isDefault")
+        ),
+        "accounts": [build_bank_account_summary(account) for account in bank_accounts],
+    }
+
+
 def build_wallet_summary(wallet: dict | None) -> dict | None:
     if not wallet:
         return None
 
     return {
         "currency": wallet.get("currency"),
+        "wallet_count": wallet.get("walletCount", 1),
         "available_balance": wallet.get("availableBalance", 0),
         "pending_balance": wallet.get("pendingBalance", 0),
         "is_frozen": wallet.get("isFrozen"),
@@ -335,9 +383,108 @@ def build_workspace_summary(
         "pickup_enabled": operations.get("pickupEnabled"),
         "delivery_enabled": operations.get("deliveryEnabled"),
         "notifications_configured": bool(settings.get("notifications")),
-        "configured_branch_count": len(branch_settings),
+        "configured_branch_settings_count": len(branch_settings),
         "payment_methods_configured": any(
             values.get("paymentMethods") for values in branch_values
+        ),
+    }
+
+
+def build_business_profile(
+    business: dict,
+    laundries: list[dict],
+    branches: list[dict],
+) -> dict:
+    active_branches = sum(
+        1
+        for branch in branches
+        if str(branch.get("status") or "").casefold() == "active"
+        or branch.get("isActive") is True
+    )
+    return {
+        "business_name": business.get("name")
+        or business.get("businessName")
+        or (laundries[0].get("laundryName") if laundries else None),
+        "status": business.get("status"),
+        "total_branches": len(branches) or len(laundries),
+        "active_branches": active_branches or sum(
+            1 for laundry in laundries if laundry.get("isActive")
+        ),
+        "created_at": isoformat_or_none(business.get("createdAt")),
+        "updated_at": isoformat_or_none(business.get("updatedAt")),
+    }
+
+
+def build_business_structure_summary(
+    branches: list[dict],
+    laundries: list[dict],
+    orders: list[dict],
+) -> dict:
+    laundry_names = {
+        str(laundry.get("_id")): laundry.get("laundryName")
+        for laundry in laundries
+        if laundry.get("_id")
+    }
+    rows: list[dict] = []
+    assigned_order_ids: set[int] = set()
+    for branch in branches:
+        branch_id = branch.get("_id")
+        legacy_laundry_id = branch.get("legacyLaundryId")
+        branch_orders = [
+            order
+            for order in orders
+            if (
+                order.get("branchId") == branch_id
+                if order.get("branchId") is not None
+                else order.get("laundryId") == legacy_laundry_id
+            )
+        ]
+        assigned_order_ids.update(id(order) for order in branch_orders)
+        rows.append(
+            {
+                "branch_id": str(branch_id) if branch_id else None,
+                "legacy_laundry_id": (
+                    str(legacy_laundry_id) if legacy_laundry_id else None
+                ),
+                "branch_name": branch.get("name")
+                or branch.get("branchName")
+                or laundry_names.get(str(legacy_laundry_id)),
+                "branch_code": branch.get("code"),
+                "status": branch.get("status"),
+                "is_active": branch.get("isActive"),
+                "total_orders": len(branch_orders),
+                "total_order_value": sum_numbers(branch_orders, "totalPayable"),
+                "total_amount_paid": sum_numbers(branch_orders, "totalAmountPaid"),
+                "total_balance_due": sum_numbers(branch_orders, "totalBalanceDue"),
+            }
+        )
+
+    if not rows:
+        for laundry in laundries:
+            laundry_id = laundry.get("_id")
+            laundry_orders = [
+                order for order in orders if order.get("laundryId") == laundry_id
+            ]
+            assigned_order_ids.update(id(order) for order in laundry_orders)
+            rows.append(
+                {
+                    "branch_id": None,
+                    "legacy_laundry_id": str(laundry_id) if laundry_id else None,
+                    "branch_name": laundry.get("laundryName"),
+                    "status": laundry.get("status"),
+                    "is_active": laundry.get("isActive"),
+                    "total_orders": len(laundry_orders),
+                    "total_order_value": sum_numbers(laundry_orders, "totalPayable"),
+                    "total_amount_paid": sum_numbers(laundry_orders, "totalAmountPaid"),
+                    "total_balance_due": sum_numbers(laundry_orders, "totalBalanceDue"),
+                }
+            )
+
+    return {
+        "total_branches": len(rows),
+        "branches": rows,
+        "unassigned_order_count": sum(
+            1 for order in orders if id(order) not in assigned_order_ids
         ),
     }
 
@@ -348,7 +495,7 @@ def build_conversation_identity(
     role: ContextRole,
 ) -> dict:
     identity = {"laundry_name": laundry.get("laundryName")}
-    if not role.has_financial_access:
+    if role != ContextRole.OWNER:
         return identity
 
     owner_member_id = laundry.get("ownerMemberId")
@@ -727,17 +874,43 @@ def build_context_summary(raw_context: dict, role: ContextRole) -> dict:
     members = raw_context["members"]
     orders = raw_context["orders"]
     logistics_jobs = raw_context["logistics_jobs"]
+    scope = raw_context.get("_scope")
+    is_business_wide = bool(scope and scope.is_business_wide)
+    laundries = raw_context.get("laundries") or [laundry]
+    branches = raw_context.get("business_branches", [])
+
+    conversation_identity = build_conversation_identity(laundry, members, role)
+    if is_business_wide:
+        business_name = (raw_context.get("business") or {}).get("name") or (
+            raw_context.get("business") or {}
+        ).get("businessName")
+        conversation_identity["business_name"] = business_name
+        conversation_identity["laundry_name"] = business_name
 
     common_context = {
         "access_scope": {
             "role": role.value,
             "financial_information_available": role.has_financial_access,
+            "level": (
+                "business"
+                if is_business_wide
+                else "branch" if scope and scope.branch_id else "legacy_laundry"
+            ),
         },
-        "conversation_identity": build_conversation_identity(laundry, members, role),
+        "conversation_identity": conversation_identity,
         "laundry_profile": (
-            build_laundry_summary(laundry)
-            if role.has_financial_access
-            else build_staff_laundry_summary(laundry)
+            build_business_scope_profile(
+                raw_context.get("business") or {},
+                laundries,
+                len(branches) or len(laundries),
+                role.has_financial_access,
+            )
+            if is_business_wide
+            else (
+                build_laundry_summary(laundry)
+                if role.has_financial_access
+                else build_staff_laundry_summary(laundry)
+            )
         ),
         "workspace": build_workspace_summary(
             raw_context.get("workspace_settings"),
@@ -762,6 +935,17 @@ def build_context_summary(raw_context: dict, role: ContextRole) -> dict:
         ),
         "catalog": build_catalog_summary(raw_context),
     }
+    if is_business_wide:
+        common_context["business_profile"] = build_business_profile(
+            raw_context.get("business") or {},
+            laundries,
+            branches,
+        )
+        common_context["business_structure"] = build_business_structure_summary(
+            branches,
+            laundries,
+            orders,
+        )
     if role == ContextRole.STAFF:
         common_context["access_scope"]["restricted_domains"] = [
             "bank accounts",
@@ -773,25 +957,30 @@ def build_context_summary(raw_context: dict, role: ContextRole) -> dict:
         ]
         return common_context
 
-    common_context.update(
-        {
-            "bank_account": build_bank_account_summary(raw_context.get("bank_account")),
-            "wallet": build_wallet_summary(raw_context.get("wallet")),
-            "wallet_activity": build_wallet_activity_summary(
-                raw_context.get("wallet_transactions", [])
-            ),
-            "debts": build_debt_summary(raw_context.get("debts", [])),
-            "payments": build_order_payment_summary(raw_context.get("order_payments", [])),
-            "payment_reconciliation": build_reconciliation_summary(
-                raw_context.get("customer_payments", []),
-                raw_context.get("payment_allocations", []),
-                raw_context.get("ledger_entries", []),
-            ),
-            "expenses": build_expense_summary(raw_context.get("monthly_expenses", [])),
-            "settlements": build_settlement_summary(raw_context.get("settlements", [])),
-            "subscription": build_subscription_summary(
-                raw_context.get("subscription_intents", [])
-            ),
-        }
-    )
+    financial_context = {
+        "bank_accounts": build_bank_accounts_summary(
+            raw_context.get("bank_accounts", [])
+        ),
+        "wallet": build_wallet_summary(raw_context.get("wallet")),
+        "wallet_activity": build_wallet_activity_summary(
+            raw_context.get("wallet_transactions", [])
+        ),
+        "debts": build_debt_summary(raw_context.get("debts", [])),
+        "payments": build_order_payment_summary(raw_context.get("order_payments", [])),
+        "payment_reconciliation": build_reconciliation_summary(
+            raw_context.get("customer_payments", []),
+            raw_context.get("payment_allocations", []),
+            raw_context.get("ledger_entries", []),
+        ),
+        "expenses": build_expense_summary(raw_context.get("monthly_expenses", [])),
+        "settlements": build_settlement_summary(raw_context.get("settlements", [])),
+        "subscription": build_subscription_summary(
+            raw_context.get("subscription_intents", [])
+        ),
+    }
+    if not is_business_wide:
+        financial_context["bank_account"] = build_bank_account_summary(
+            raw_context.get("bank_account")
+        )
+    common_context.update(financial_context)
     return common_context

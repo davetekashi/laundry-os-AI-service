@@ -27,7 +27,7 @@ def prepare_laundry_context(
         raise ContextPreparationError("Failed to load laundry context from MongoDB.") from exc
 
     prepared_at = datetime.now(UTC).isoformat()
-    scope = raw_context.pop("_scope")
+    scope = raw_context["_scope"]
     context = build_context_summary(raw_context, role)
     snapshot = ContextSnapshot(
         laundry_id=str(scope.laundry_id),
@@ -42,10 +42,16 @@ def prepare_laundry_context(
     set_context(snapshot)
 
     summary: dict = {
-        "laundry_name": context["laundry_profile"].get("laundry_name"),
+        "laundry_name": (
+            context.get("business_profile", {}).get("business_name")
+            or context["laundry_profile"].get("laundry_name")
+        ),
         "total_customers": context["customers"].get("total_customers", 0),
         "total_orders": context["orders"].get("total_orders", 0),
     }
+    if scope.is_business_wide:
+        summary["business_name"] = context["business_profile"].get("business_name")
+        summary["total_branches"] = context["business_structure"]["total_branches"]
     if role.has_financial_access:
         summary.update(
             {

@@ -24,7 +24,6 @@ class PrepareContextRequest(ScopeIdentifiers):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "laundry_id": "6a54b1f08898ecb11ff0068f",
                 "business_id": "6a8496025e553211a5ecc1dd",
                 "role": "owner",
             }
@@ -82,11 +81,14 @@ class PrepareContextResponse(BaseModel):
                 "success": True,
                 "laundry_id": "6a54b1f08898ecb11ff0068f",
                 "business_id": "6a8496025e553211a5ecc1dd",
+                "branch_id": None,
                 "scope_mode": "migrated",
                 "role": "owner",
                 "prepared_at": "2026-06-16T13:23:36.218984+00:00",
                 "summary": {
                     "laundry_name": "Protek Premium",
+                    "business_name": "Protek Premium",
+                    "total_branches": 2,
                     "total_customers": 3,
                     "total_orders": 7,
                     "total_payment_events": 15,

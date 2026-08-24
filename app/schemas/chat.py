@@ -21,10 +21,9 @@ class ChatRequest(ScopeIdentifiers):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "laundry_id": "6a54b1f08898ecb11ff0068f",
                 "business_id": "6a8496025e553211a5ecc1dd",
                 "role": "owner",
-                "message": "Give me a summary of my laundry business right now."
+                "message": "How many branches does my business have and how are they performing?"
             }
         }
     }
@@ -73,6 +72,7 @@ class ChatResponse(BaseModel):
                 "success": True,
                 "laundry_id": "6a54b1f08898ecb11ff0068f",
                 "business_id": "6a8496025e553211a5ecc1dd",
+                "branch_id": None,
                 "scope_mode": "migrated",
                 "role": "owner",
                 "prepared_at": "2026-06-16T13:23:36.218984+00:00",

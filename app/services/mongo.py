@@ -6,7 +6,12 @@ from pymongo import MongoClient
 
 from app.core.config import get_settings
 from app.schemas.context import ContextRole
-from app.services.scope import ResolvedScope, resolve_scope, scope_order_query
+from app.services.scope import (
+    ResolvedScope,
+    resolve_scope,
+    scope_legacy_query,
+    scope_order_query,
+)
 
 
 @lru_cache
@@ -114,6 +119,42 @@ def _dedupe_documents(documents: list[dict]) -> list[dict]:
             seen.add(document_id)
         result.append(document)
     return result
+
+
+def _aggregate_wallets(wallets: list[dict]) -> dict | None:
+    if not wallets:
+        return None
+    currencies = {
+        str(wallet.get("currency"))
+        for wallet in wallets
+        if wallet.get("currency")
+    }
+    dated_wallets = [
+        wallet
+        for wallet in wallets
+        if isinstance(wallet.get("updatedAt"), datetime)
+    ]
+    latest = max(dated_wallets, key=lambda row: row["updatedAt"], default={})
+    return {
+        "currency": next(iter(currencies)) if len(currencies) == 1 else "multiple",
+        "availableBalance": sum(
+            float(wallet.get("availableBalance", 0) or 0) for wallet in wallets
+        ),
+        "pendingBalance": sum(
+            float(wallet.get("pendingBalance", 0) or 0) for wallet in wallets
+        ),
+        "isFrozen": any(wallet.get("isFrozen") for wallet in wallets),
+        "lastTransactionAt": max(
+            (
+                wallet["lastTransactionAt"]
+                for wallet in wallets
+                if isinstance(wallet.get("lastTransactionAt"), datetime)
+            ),
+            default=None,
+        ),
+        "updatedAt": latest.get("updatedAt"),
+        "walletCount": len(wallets),
+    }
 
 
 def orders_to_debts(orders: list[dict]) -> list[dict]:
@@ -263,8 +304,8 @@ def fetch_scope_customers(
     scope: ResolvedScope,
     projection: dict | None = None,
 ) -> list[dict]:
-    legacy_customers = list(
-        db.laundrycustomers.find({"laundryId": scope.laundry_id}, projection)
+    legacy_customers = _dedupe_documents(
+        list(db.laundrycustomers.find(scope_legacy_query(scope), projection))
     )
     if not scope.business_id:
         return legacy_customers
@@ -361,10 +402,12 @@ def fetch_scope_customers(
 
 
 def fetch_scope_members(db, scope: ResolvedScope) -> list[dict]:
-    members = list(
-        db.laundrymembers.find(
-            {"laundryId": scope.laundry_id},
-            STAFF_MEMBER_PROJECTION,
+    members = _dedupe_documents(
+        list(
+            db.laundrymembers.find(
+                scope_legacy_query(scope),
+                STAFF_MEMBER_PROJECTION,
+            )
         )
     )
     if not scope.business_id:
@@ -510,15 +553,26 @@ def fetch_laundry_context_documents(
         else db.laundries.find_one({"_id": laundry_object_id}, laundry_projection)
     )
 
-    base_query = {"laundryId": laundry_object_id}
+    base_query = scope_legacy_query(scope)
     customer_projection = None if role.has_financial_access else STAFF_CUSTOMER_PROJECTION
     order_projection = None if role.has_financial_access else STAFF_ORDER_PROJECTION
     logistics_projection = None if role.has_financial_access else STAFF_LOGISTICS_PROJECTION
     orders = list(db.orders.find(scope_order_query(scope), order_projection))
     customers = fetch_scope_customers(db, scope, customer_projection)
+    laundries = list(
+        db.laundries.find(
+            {"_id": {"$in": list(scope.legacy_laundry_ids)}}
+            if scope.is_business_wide
+            else {"_id": laundry_object_id},
+            laundry_projection,
+        )
+    )
     context = {
         "_scope": scope,
         "laundry": laundry,
+        "laundries": laundries or [laundry],
+        "business": scope.business,
+        "business_branches": list(scope.branches),
         "workspace_settings": db.laundryworkspacesettings.find_one(
             base_query,
             {"operations": 1, "notifications": 1},
@@ -562,22 +616,36 @@ def fetch_laundry_context_documents(
 
     if role.has_financial_access:
         payments = list(db.orderpayments.find(base_query))
+        bank_accounts = list(
+            db.laundrybankaccounts.find(
+                base_query,
+                {
+                    "laundryId": 1,
+                    "bankName": 1,
+                    "bankCode": 1,
+                    "accountName": 1,
+                    "accountNumber": 1,
+                    "isDefault": 1,
+                    "status": 1,
+                    "verifiedAt": 1,
+                    "createdAt": 1,
+                },
+            )
+        )
+        wallets = list(db.laundrywallets.find(base_query))
         context.update(
             {
-                "bank_account": db.laundrybankaccounts.find_one(
-                    base_query,
-                    {
-                        "bankName": 1,
-                        "bankCode": 1,
-                        "accountName": 1,
-                        "accountNumber": 1,
-                        "isDefault": 1,
-                        "status": 1,
-                        "verifiedAt": 1,
-                    },
-                    sort=[("isDefault", -1), ("createdAt", -1)],
+                "bank_account": next(
+                    (
+                        account
+                        for account in bank_accounts
+                        if account.get("isDefault")
+                    ),
+                    bank_accounts[0] if bank_accounts else None,
                 ),
-                "wallet": db.laundrywallets.find_one(base_query),
+                "bank_accounts": bank_accounts,
+                "wallet": _aggregate_wallets(wallets),
+                "wallets": wallets,
                 "wallet_transactions": list(db.laundrywallettransactions.find(base_query)),
                 "debts": orders_to_debts(orders),
                 "order_payments": _enrich_order_payments(db, payments, customers),

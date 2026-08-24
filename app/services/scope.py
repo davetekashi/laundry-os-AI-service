@@ -12,6 +12,7 @@ class ResolvedScope:
     branch_id: ObjectId | None = None
     branch_ids: tuple[ObjectId, ...] = ()
     legacy_laundry_ids: tuple[ObjectId, ...] = ()
+    branches: tuple[dict, ...] = ()
 
     @property
     def mode(self) -> str:
@@ -20,6 +21,10 @@ class ResolvedScope:
     @property
     def is_branch_scoped(self) -> bool:
         return self.branch_id is not None
+
+    @property
+    def is_business_wide(self) -> bool:
+        return self.business_id is not None and self.branch_id is None
 
     @property
     def cache_key(self) -> str:
@@ -61,6 +66,13 @@ def scope_order_query(scope: ResolvedScope, extra: dict | None = None) -> dict:
     if extra:
         return {"$and": [identity_query, extra]}
     return identity_query
+
+
+def scope_legacy_query(scope: ResolvedScope) -> dict:
+    if scope.is_business_wide:
+        laundry_ids = list(scope.legacy_laundry_ids) or [scope.laundry_id]
+        return {"laundryId": {"$in": laundry_ids}}
+    return {"laundryId": scope.laundry_id}
 
 
 def resolve_scope(db, laundry_id: str | None, business_id: str | None) -> ResolvedScope:
@@ -130,7 +142,17 @@ def resolve_scope(db, laundry_id: str | None, business_id: str | None) -> Resolv
         branch_documents = list(
             db.branches.find(
                 {"businessId": business_object_id},
-                {"_id": 1, "legacyLaundryId": 1},
+                {
+                    "_id": 1,
+                    "legacyLaundryId": 1,
+                    "name": 1,
+                    "branchName": 1,
+                    "code": 1,
+                    "status": 1,
+                    "isActive": 1,
+                    "isPrimary": 1,
+                    "createdAt": 1,
+                },
             )
         )
         if branch_requested and requested_laundry_id and branch is None:
@@ -167,4 +189,5 @@ def resolve_scope(db, laundry_id: str | None, business_id: str | None) -> Resolv
         branch_id=branch.get("_id") if branch else None,
         branch_ids=branch_ids,
         legacy_laundry_ids=legacy_laundry_ids,
+        branches=tuple(branch_documents),
     )
