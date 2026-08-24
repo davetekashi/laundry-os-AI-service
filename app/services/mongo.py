@@ -6,7 +6,7 @@ from pymongo import MongoClient
 
 from app.core.config import get_settings
 from app.schemas.context import ContextRole
-from app.services.scope import ResolvedScope, resolve_scope
+from app.services.scope import ResolvedScope, resolve_scope, scope_order_query
 
 
 @lru_cache
@@ -114,17 +114,6 @@ def _dedupe_documents(documents: list[dict]) -> list[dict]:
             seen.add(document_id)
         result.append(document)
     return result
-
-
-def _scope_order_query(scope: ResolvedScope) -> dict:
-    if scope.business_id:
-        return {
-            "$or": [
-                {"businessId": scope.business_id},
-                {"laundryId": scope.laundry_id},
-            ]
-        }
-    return {"laundryId": scope.laundry_id}
 
 
 def orders_to_debts(orders: list[dict]) -> list[dict]:
@@ -290,9 +279,12 @@ def fetch_scope_customers(
         for customer in legacy_customers
         if isinstance(customer.get("_id"), ObjectId)
     }
+    profile_query = {"businessId": scope.business_id}
+    if scope.branch_id:
+        profile_query["branchId"] = scope.branch_id
     profiles = list(
         db.branchcustomerprofiles.find(
-            {"businessId": scope.business_id},
+            profile_query,
             {
                 "businessCustomerId": 1,
                 "legacyLaundryCustomerId": 1,
@@ -306,9 +298,18 @@ def fetch_scope_customers(
     profiles_by_customer = {
         profile.get("businessCustomerId"): profile for profile in profiles
     }
+    migrated_customer_query: dict = {"businessId": scope.business_id}
+    if scope.branch_id:
+        migrated_customer_query["_id"] = {
+            "$in": [
+                profile.get("businessCustomerId")
+                for profile in profiles
+                if isinstance(profile.get("businessCustomerId"), ObjectId)
+            ]
+        }
     migrated_customers = list(
         db.businesscustomers.find(
-            {"businessId": scope.business_id},
+            migrated_customer_query,
             {
                 "firstName": 1,
                 "lastName": 1,
@@ -390,9 +391,12 @@ def fetch_scope_members(db, scope: ResolvedScope) -> list[dict]:
             },
         )
     )
+    assignment_query = {"businessId": scope.business_id}
+    if scope.branch_id:
+        assignment_query["branchId"] = scope.branch_id
     assignments = list(
         db.branchassignments.find(
-            {"businessId": scope.business_id},
+            assignment_query,
             {
                 "userId": 1,
                 "legacyLaundryMemberId": 1,
@@ -499,7 +503,7 @@ def fetch_laundry_context_documents(
     scope = resolve_scope(db, laundry_id, business_id)
     laundry_object_id = scope.laundry_id
 
-    laundry_projection = None if role == ContextRole.OWNER else STAFF_LAUNDRY_PROJECTION
+    laundry_projection = None if role.has_financial_access else STAFF_LAUNDRY_PROJECTION
     laundry = (
         scope.laundry
         if laundry_projection is None
@@ -507,10 +511,10 @@ def fetch_laundry_context_documents(
     )
 
     base_query = {"laundryId": laundry_object_id}
-    customer_projection = None if role == ContextRole.OWNER else STAFF_CUSTOMER_PROJECTION
-    order_projection = None if role == ContextRole.OWNER else STAFF_ORDER_PROJECTION
-    logistics_projection = None if role == ContextRole.OWNER else STAFF_LOGISTICS_PROJECTION
-    orders = list(db.orders.find(_scope_order_query(scope), order_projection))
+    customer_projection = None if role.has_financial_access else STAFF_CUSTOMER_PROJECTION
+    order_projection = None if role.has_financial_access else STAFF_ORDER_PROJECTION
+    logistics_projection = None if role.has_financial_access else STAFF_LOGISTICS_PROJECTION
+    orders = list(db.orders.find(scope_order_query(scope), order_projection))
     customers = fetch_scope_customers(db, scope, customer_projection)
     context = {
         "_scope": scope,
@@ -525,7 +529,13 @@ def fetch_laundry_context_documents(
             else None
         ),
         "branch_settings": (
-            list(db.branchsettings.find({"businessId": scope.business_id}))
+            list(
+                db.branchsettings.find(
+                    {"branchId": scope.branch_id}
+                    if scope.branch_id
+                    else {"businessId": scope.business_id}
+                )
+            )
             if scope.business_id
             else []
         ),
@@ -538,7 +548,7 @@ def fetch_laundry_context_documents(
         "dispatches": list(
             db.laundrydispatches.find(
                 base_query,
-                None if role == ContextRole.OWNER else STAFF_DISPATCH_PROJECTION,
+                None if role.has_financial_access else STAFF_DISPATCH_PROJECTION,
             )
         ),
         "drivers": list(
@@ -550,7 +560,7 @@ def fetch_laundry_context_documents(
     }
     context.update(_context_catalog_documents(db, scope, orders))
 
-    if role == ContextRole.OWNER:
+    if role.has_financial_access:
         payments = list(db.orderpayments.find(base_query))
         context.update(
             {
@@ -600,7 +610,7 @@ def fetch_laundry_report_documents(
     }
     orders_query = {
         "$and": [
-            _scope_order_query(scope),
+            scope_order_query(scope),
             {"createdAt": {"$gte": start_date, "$lte": end_date}},
         ]
     }
@@ -609,7 +619,7 @@ def fetch_laundry_report_documents(
         "createdAt": {"$gte": start_date, "$lte": end_date},
     }
 
-    all_orders = list(db.orders.find(_scope_order_query(scope)))
+    all_orders = list(db.orders.find(scope_order_query(scope)))
     return {
         "_scope": scope,
         "laundry": laundry,

@@ -7,7 +7,12 @@ from app.schemas.scope import ScopeIdentifiers
 
 class ContextRole(StrEnum):
     OWNER = "owner"
+    BUSINESS_MANAGER = "business_manager"
     STAFF = "staff"
+
+    @property
+    def has_financial_access(self) -> bool:
+        return self in {self.OWNER, self.BUSINESS_MANAGER}
 
 
 class PrepareContextRequest(ScopeIdentifiers):
@@ -30,6 +35,7 @@ class PrepareContextRequest(ScopeIdentifiers):
 class ContextSnapshot(BaseModel):
     laundry_id: str
     business_id: str | None = None
+    branch_id: str | None = None
     scope_mode: str = "legacy"
     cache_key: str | None = None
     role: ContextRole
@@ -49,6 +55,10 @@ class PrepareContextResponse(BaseModel):
     business_id: str | None = Field(
         default=None,
         description="Resolved migrated business id, or null for a legacy-only laundry.",
+    )
+    branch_id: str | None = Field(
+        default=None,
+        description="Resolved branch id when a branch laundry_id was supplied.",
     )
     scope_mode: str = Field(
         description="Resolved data mode: `legacy` or `migrated`.",

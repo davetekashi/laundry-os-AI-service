@@ -348,7 +348,7 @@ def build_conversation_identity(
     role: ContextRole,
 ) -> dict:
     identity = {"laundry_name": laundry.get("laundryName")}
-    if role != ContextRole.OWNER:
+    if not role.has_financial_access:
         return identity
 
     owner_member_id = laundry.get("ownerMemberId")
@@ -731,12 +731,12 @@ def build_context_summary(raw_context: dict, role: ContextRole) -> dict:
     common_context = {
         "access_scope": {
             "role": role.value,
-            "financial_information_available": role == ContextRole.OWNER,
+            "financial_information_available": role.has_financial_access,
         },
         "conversation_identity": build_conversation_identity(laundry, members, role),
         "laundry_profile": (
             build_laundry_summary(laundry)
-            if role == ContextRole.OWNER
+            if role.has_financial_access
             else build_staff_laundry_summary(laundry)
         ),
         "workspace": build_workspace_summary(
@@ -746,13 +746,13 @@ def build_context_summary(raw_context: dict, role: ContextRole) -> dict:
         ),
         "customers": (
             build_customer_summary(customers)
-            if role == ContextRole.OWNER
+            if role.has_financial_access
             else build_staff_customer_summary(customers)
         ),
         "members": build_member_summary(members),
         "orders": (
             build_order_summary(orders)
-            if role == ContextRole.OWNER
+            if role.has_financial_access
             else build_staff_order_summary(orders)
         ),
         "logistics": build_operational_logistics_summary(

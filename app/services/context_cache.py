@@ -14,7 +14,7 @@ def _business_key(business_id: str) -> str:
 
 def set_context(snapshot: ContextSnapshot) -> None:
     _CONTEXT_CACHE[(_laundry_key(snapshot.laundry_id), snapshot.role)] = snapshot
-    if snapshot.business_id:
+    if snapshot.business_id and not snapshot.branch_id:
         _CONTEXT_CACHE[(_business_key(snapshot.business_id), snapshot.role)] = snapshot
     if snapshot.cache_key:
         _CONTEXT_CACHE[(snapshot.cache_key, snapshot.role)] = snapshot

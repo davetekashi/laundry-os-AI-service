@@ -6,7 +6,7 @@ class ScopeIdentifiers(BaseModel):
         default=None,
         min_length=1,
         description=(
-            "Legacy laundry MongoDB ObjectId. Required when business_id is omitted."
+            "Legacy laundry MongoDB ObjectId. For migrated multi-branch businesses, this identifies the specific branch."
         ),
         examples=["6a18a4e625addd1b6e2406b7"],
     )
@@ -14,7 +14,7 @@ class ScopeIdentifiers(BaseModel):
         default=None,
         min_length=1,
         description=(
-            "Migrated laundry-business MongoDB ObjectId. Required when laundry_id is omitted."
+            "Migrated laundry-business MongoDB ObjectId. When sent alone, the request is business-wide."
         ),
         examples=["6b18a4e625addd1b6e2406b8"],
     )

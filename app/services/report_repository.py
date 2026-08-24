@@ -10,7 +10,7 @@ from app.services.mongo import (
     get_database,
     orders_to_debts,
 )
-from app.services.scope import ResolvedScope, resolve_scope
+from app.services.scope import ResolvedScope, resolve_scope, scope_order_query
 
 
 MAX_REPORT_RECORDS = 10_000
@@ -128,22 +128,6 @@ def _is_in_range(value: Any, start_date: datetime, end_date: datetime) -> bool:
     if end_date.tzinfo is None:
         end_date = end_date.replace(tzinfo=UTC)
     return start_date <= value <= end_date
-
-
-def _scope_order_query(scope: ResolvedScope, extra: dict | None = None) -> dict:
-    scope_query: dict
-    if scope.business_id:
-        scope_query = {
-            "$or": [
-                {"businessId": scope.business_id},
-                {"laundryId": scope.laundry_id},
-            ]
-        }
-    else:
-        scope_query = {"laundryId": scope.laundry_id}
-    if extra:
-        return {"$and": [scope_query, extra]}
-    return scope_query
 
 
 def _fallback_date_query(
@@ -369,7 +353,12 @@ def fetch_report_source(
             else None
         )
         related["branch_settings"] = (
-            _limited_find(db.branchsettings, {"businessId": scope.business_id})
+            _limited_find(
+                db.branchsettings,
+                {"branchId": scope.branch_id}
+                if scope.branch_id
+                else {"businessId": scope.business_id},
+            )
             if scope.business_id
             else []
         )
@@ -403,7 +392,7 @@ def fetch_report_source(
         if entity == "orders":
             records = _limited_find(
                 db.orders,
-                _scope_order_query(scope, _range_query("createdAt", start_date, end_date)),
+                scope_order_query(scope, _range_query("createdAt", start_date, end_date)),
                 ORDER_PROJECTION,
                 "createdAt",
             )
@@ -448,7 +437,7 @@ def fetch_report_source(
                         customer_ids.add(value)
             related["orders"] = _limited_find(
                 db.orders,
-                _scope_order_query(
+                scope_order_query(
                     scope,
                     {"$or": [
                         {"laundryCustomerId": {"$in": list(customer_ids)}},
@@ -478,7 +467,7 @@ def fetch_report_source(
         elif entity == "debts":
             debt_orders = _limited_find(
                 db.orders,
-                _scope_order_query(
+                scope_order_query(
                     scope,
                     _range_query("createdAt", start_date, end_date),
                 ),
@@ -489,7 +478,7 @@ def fetch_report_source(
             order_ids = _id_set(records, "orderId")
             related["orders"] = _limited_find(
                 db.orders,
-                _scope_order_query(scope, {"_id": {"$in": list(order_ids)}}),
+                scope_order_query(scope, {"_id": {"$in": list(order_ids)}}),
                 ORDER_PROJECTION,
             )
             related["order_payments"] = _limited_find(
@@ -504,7 +493,7 @@ def fetch_report_source(
             records = fetch_scope_members(db, scope)
             related["orders"] = _limited_find(
                 db.orders,
-                _scope_order_query(scope, _range_query("createdAt", start_date, end_date)),
+                scope_order_query(scope, _range_query("createdAt", start_date, end_date)),
                 ORDER_PROJECTION,
                 "createdAt",
             )
@@ -524,7 +513,7 @@ def fetch_report_source(
             order_ids = _id_set(records, "orderId")
             customer_ids = _id_set(records, "laundryCustomerId")
             related["orders"] = _limited_find(
-                db.orders, _scope_order_query(scope, {"_id": {"$in": list(order_ids)}}), ORDER_PROJECTION
+                db.orders, scope_order_query(scope, {"_id": {"$in": list(order_ids)}}), ORDER_PROJECTION
             )
             related["customers"] = _limited_find(
                 db.laundrycustomers, {**base_query, "_id": {"$in": list(customer_ids)}}
@@ -565,7 +554,7 @@ def fetch_report_source(
             )
             related["orders"] = _limited_find(
                 db.orders,
-                _scope_order_query(scope, {"_id": {"$in": list(order_ids)}}),
+                scope_order_query(scope, {"_id": {"$in": list(order_ids)}}),
                 ORDER_PROJECTION,
             )
             quality["missing_receipt_references"] = _missing_reference_count(
@@ -584,7 +573,7 @@ def fetch_report_source(
         elif entity == "profitability":
             records = _limited_find(
                 db.orders,
-                _scope_order_query(scope, _range_query("createdAt", start_date, end_date)),
+                scope_order_query(scope, _range_query("createdAt", start_date, end_date)),
                 ORDER_PROJECTION,
                 "createdAt",
             )
@@ -628,7 +617,7 @@ def fetch_report_source(
         elif entity in {"services", "items"}:
             records = _limited_find(
                 db.orders,
-                _scope_order_query(scope, _range_query("createdAt", start_date, end_date)),
+                scope_order_query(scope, _range_query("createdAt", start_date, end_date)),
                 ORDER_PROJECTION,
                 "createdAt",
             )
@@ -656,7 +645,7 @@ def fetch_report_source(
                 ]},
             )
             related["orders"] = _limited_find(
-                db.orders, _scope_order_query(scope, {"_id": {"$in": list(order_ids)}}), ORDER_PROJECTION
+                db.orders, scope_order_query(scope, {"_id": {"$in": list(order_ids)}}), ORDER_PROJECTION
             )
             quality["missing_receipt_references"] = _missing_reference_count(
                 records, "customerPaymentId", related["customer_payments"]

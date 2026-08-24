@@ -21,8 +21,8 @@ router = APIRouter(tags=["chat"])
         "provided id and `role`, the request will fail and the backend should call `/context/prepare` "
         "first. The backend must send the authenticated role, not a role selected by the frontend. Staff answers "
         "cannot access owner-only financial information because it is absent from the staff snapshot.\n\n"
-        "Send `laundry_id`, `business_id`, or both. For a migrated scope, chat can retrieve the prepared snapshot "
-        "through either id. If both are supplied, both must identify the same prepared snapshot."
+        "Send the same `laundry_id`, optional `business_id`, and `role` used for preparation. Branch contexts are "
+        "isolated, while a context prepared with only `business_id` remains business-wide."
     ),
     responses={
         400: {

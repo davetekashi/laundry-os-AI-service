@@ -50,6 +50,10 @@ class WeeklySummaryReportResponse(BaseModel):
         default=None,
         description="Resolved business id, or null for a legacy-only laundry.",
     )
+    branch_id: str | None = Field(
+        default=None,
+        description="Resolved branch id for a branch-scoped report.",
+    )
     scope_mode: str = Field(
         description="Resolved data mode: `legacy` or `migrated`.",
     )
@@ -118,6 +122,10 @@ class DebtRiskAnalysisResponse(BaseModel):
     business_id: str | None = Field(
         default=None,
         description="Resolved business id, or null for a legacy-only laundry.",
+    )
+    branch_id: str | None = Field(
+        default=None,
+        description="Resolved branch id for a branch-scoped report.",
     )
     scope_mode: str = Field(
         description="Resolved data mode: `legacy` or `migrated`.",

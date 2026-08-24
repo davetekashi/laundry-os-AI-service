@@ -26,9 +26,9 @@ router = APIRouter(tags=["reports"])
     description=(
         "Generates an entity-specific management report for one laundry business, uploads it to the configured "
         "private Cloudflare R2 bucket, and returns a temporary download URL.\n\n"
-        "Send `laundry_id`, `business_id`, or both. At least one is required. Migrated businesses are resolved "
-        "across both identifiers; legacy laundries without a business record remain supported. If both ids are "
-        "provided, they must belong together.\n\n"
+        "Send `laundry_id`, `business_id`, or both. At least one is required. A migrated branch's `laundry_id` "
+        "selects that branch and may be sent with its shared `business_id`; generated data is restricted to that "
+        "branch. Sending only `business_id` selects the whole business. Legacy laundries remain supported.\n\n"
         "Supported entities are `laundry`, `bank_account`, `customers`, `debts`, `members`, `wallet`, "
         "`logistics`, `payments`, `orders`, `expenses`, `profitability`, `settlements`, "
         "`wallet_transactions`, `services`, `items`, and `financial_reconciliation`. Historical entities "
@@ -71,8 +71,10 @@ def generate_report_endpoint(payload: GenerateReportRequest) -> GenerateReportRe
         message = str(exc)
         status_code = 400 if message in {
             "Laundry not found.",
+            "Business not found.",
+            "laundry_id and business_id do not belong together.",
             "Unsupported report entity.",
-        } or message.startswith("The selected report contains") else 500
+        } or message.startswith(("Invalid ", "The selected report contains")) else 500
         raise HTTPException(status_code=status_code, detail=message) from exc
     except Exception as exc:
         raise HTTPException(
@@ -89,8 +91,8 @@ def generate_report_endpoint(payload: GenerateReportRequest) -> GenerateReportRe
         "Generates a plain-text weekly business summary for a laundry within a caller-specified ISO date range. "
         "The endpoint computes factual metrics from MongoDB first, then uses the AI model only to convert those "
         "facts into a narrative summary suitable for insertion into a document by the backend.\n\n"
-        "The backend should send either `laundry_id` or `business_id` plus `start_date` and `end_date` in ISO 8601 format. "
-        "Both ids may be sent together for relationship validation."
+        "The backend should send a branch `laundry_id`, a business-wide `business_id`, or both, plus `start_date` "
+        "and `end_date` in ISO 8601 format. When both ids are sent, the selected branch must belong to the business."
     ),
     responses={
         400: {
@@ -139,7 +141,7 @@ def weekly_summary_report_endpoint(
         "The response includes a structured debt table with `Customer`, `Debt Owed`, and `Time Frame`, "
         "plus a plain-text summary that explains the debt exposure and trend.\n\n"
         "This endpoint is not tied to a reporting date range. It uses the full current debt position for the resolved "
-        "business scope. Send `laundry_id`, `business_id`, or both."
+        "scope. A branch `laundry_id` restricts the report to that branch; sending only `business_id` uses the whole business."
     ),
     responses={
         400: {

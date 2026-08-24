@@ -43,6 +43,10 @@ class ChatResponse(BaseModel):
         default=None,
         description="Resolved migrated business id, or null for a legacy-only laundry.",
     )
+    branch_id: str | None = Field(
+        default=None,
+        description="Resolved branch id for a branch-scoped prepared context.",
+    )
     scope_mode: str = Field(
         description="Resolved data mode used by the prepared context.",
         examples=["migrated"],

@@ -37,7 +37,7 @@ def build_chat_prompt(context: dict, role: ContextRole, message: str) -> str:
         "debts, bank accounts, wallets, expenses, profitability, settlements, commissions, or financial reconciliation. "
         "If asked, explain briefly that financial information is restricted to owners."
         if role == ContextRole.STAFF
-        else "The authenticated user is the laundry owner and may receive all facts present in the prepared context."
+        else "The authenticated user has owner-level access and may receive all facts present in the prepared context."
     )
     return (
         f"Access policy: {role_instruction}\n\n"
@@ -83,6 +83,7 @@ def answer_laundry_question(
         success=True,
         laundry_id=snapshot.laundry_id,
         business_id=snapshot.business_id,
+        branch_id=snapshot.branch_id,
         scope_mode=snapshot.scope_mode,
         role=role,
         prepared_at=snapshot.prepared_at,

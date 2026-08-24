@@ -32,6 +32,7 @@ def prepare_laundry_context(
     snapshot = ContextSnapshot(
         laundry_id=str(scope.laundry_id),
         business_id=str(scope.business_id) if scope.business_id else None,
+        branch_id=str(scope.branch_id) if scope.branch_id else None,
         scope_mode=scope.mode,
         cache_key=scope.cache_key,
         role=role,
@@ -45,7 +46,7 @@ def prepare_laundry_context(
         "total_customers": context["customers"].get("total_customers", 0),
         "total_orders": context["orders"].get("total_orders", 0),
     }
-    if role == ContextRole.OWNER:
+    if role.has_financial_access:
         summary.update(
             {
                 "total_payment_events": context["payments"].get(
@@ -65,6 +66,7 @@ def prepare_laundry_context(
         success=True,
         laundry_id=str(scope.laundry_id),
         business_id=str(scope.business_id) if scope.business_id else None,
+        branch_id=str(scope.branch_id) if scope.branch_id else None,
         scope_mode=scope.mode,
         role=role,
         prepared_at=prepared_at,
