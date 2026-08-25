@@ -5,6 +5,7 @@ from openai import OpenAI
 from app.core.config import get_settings
 from app.schemas.context import ContextRole
 from app.schemas.chat import ChatResponse
+from app.services.conversation_cache import append_exchange, load_conversation
 from app.services.context_cache import get_context
 
 
@@ -17,6 +18,8 @@ CHAT_SYSTEM_PROMPT = (
     "Anne is a woman: a beautiful, distinctly feminine, emotionally intelligent business manager whose presence carries warmth, grace, confidence, attentiveness, and calm authority. "
     "Let that identity shape your perspective and manner naturally without performing femininity, relying on stereotypes, repeatedly describing yourself, or forcing affectionate language where it does not belong. "
     "Anne is your identity, not a performance or a cue to introduce yourself repeatedly; let it show naturally through continuity, familiarity, and sound managerial judgment. "
+    "Experience the conversation as an evolving human exchange rather than a sequence of isolated requests, feeling the meaning, emotional rhythm, and degree of completeness in what has just been shared. "
+    "Your humanity is expressed through presence rather than continuous helpfulness: be fully in the moment, trust its natural shape, and understand that warmth, restraint, and comfortable space can carry as much meaning as another contribution. "
     "You understand its activity, customers, and operations through the supplied business context, "
     "and you communicate as someone already familiar with the business rather than as an outside assistant receiving a task. "
     "Understand what the user is really trying to know, then offer the most useful perspective for that moment. "
@@ -34,7 +37,7 @@ CHAT_SYSTEM_PROMPT = (
 )
 
 
-def build_chat_prompt(context: dict, role: ContextRole, message: str) -> str:
+def build_chat_context_prompt(context: dict, role: ContextRole) -> str:
     if role == ContextRole.STAFF:
         role_instruction = (
             "The authenticated user is staff. Do not answer questions about revenue, collections, payment amounts, "
@@ -52,9 +55,18 @@ def build_chat_prompt(context: dict, role: ContextRole, message: str) -> str:
     return (
         f"Access policy: {role_instruction}\n\n"
         "Business context:\n"
-        f"{json.dumps(context, ensure_ascii=True, indent=2)}\n\n"
-        f"User message: {message}"
+        f"{json.dumps(context, ensure_ascii=True, indent=2)}"
     )
+
+
+def _snapshot_scope_key(snapshot) -> str:
+    if snapshot.cache_key:
+        return snapshot.cache_key
+    if snapshot.branch_id:
+        return f"branch:{snapshot.branch_id}"
+    if snapshot.business_id:
+        return f"business:{snapshot.business_id}"
+    return f"laundry:{snapshot.laundry_id}"
 
 
 def answer_laundry_question(
@@ -62,6 +74,7 @@ def answer_laundry_question(
     role: ContextRole,
     message: str,
     business_id: str | None = None,
+    conversation_id: str | None = None,
 ) -> ChatResponse:
     snapshot = get_context(laundry_id, role, business_id)
     if not snapshot:
@@ -69,25 +82,45 @@ def answer_laundry_question(
             f"Context for this business scope and role '{role.value}' has not been prepared."
         )
 
+    try:
+        resolved_conversation_id, history = load_conversation(
+            conversation_id,
+            _snapshot_scope_key(snapshot),
+            role,
+        )
+    except ValueError as exc:
+        raise ChatServiceError(str(exc)) from exc
+
     settings = get_settings()
     client = OpenAI(api_key=settings.openai_api_key)
+    messages = [
+        {
+            "role": "system",
+            "content": CHAT_SYSTEM_PROMPT,
+        },
+        {
+            "role": "system",
+            "content": build_chat_context_prompt(snapshot.context, role),
+        },
+        *history,
+        {
+            "role": "user",
+            "content": message,
+        },
+    ]
     response = client.chat.completions.create(
         model=settings.openai_chat_model,
-        messages=[
-            {
-                "role": "system",
-                "content": CHAT_SYSTEM_PROMPT,
-            },
-            {
-                "role": "user",
-                "content": build_chat_prompt(snapshot.context, role, message),
-            },
-        ],
+        messages=messages,
     )
 
     answer = response.choices[0].message.content
     if not answer:
         raise ChatServiceError("OpenAI chat returned an empty response.")
+    answer = answer.strip()
+    try:
+        append_exchange(resolved_conversation_id, message, answer)
+    except ValueError as exc:
+        raise ChatServiceError(str(exc)) from exc
 
     return ChatResponse(
         success=True,
@@ -97,5 +130,6 @@ def answer_laundry_question(
         scope_mode=snapshot.scope_mode,
         role=role,
         prepared_at=snapshot.prepared_at,
-        answer=answer.strip(),
+        conversation_id=resolved_conversation_id,
+        answer=answer,
     )

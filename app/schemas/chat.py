@@ -17,13 +17,22 @@ class ChatRequest(ScopeIdentifiers):
         ),
         examples=["Give me a summary of my laundry business right now."],
     )
+    conversation_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        description=(
+            "Conversation identifier returned by a previous chat response. Omit it to start a new conversation."
+        ),
+    )
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "business_id": "6a8496025e553211a5ecc1dd",
                 "role": "owner",
-                "message": "How many branches does my business have and how are they performing?"
+                "message": "How many branches does my business have and how are they performing?",
+                "conversation_id": None,
             }
         }
     }
@@ -58,6 +67,9 @@ class ChatResponse(BaseModel):
         description="UTC timestamp of the prepared context snapshot used for this chat answer.",
         examples=["2026-06-16T13:23:36.218984+00:00"],
     )
+    conversation_id: str = Field(
+        description="Identifier to send with the next message in this conversation.",
+    )
     answer: str = Field(
         description=(
             "Anne's answer. Laundry-specific facts are grounded in prepared context, while general advice "
@@ -76,6 +88,7 @@ class ChatResponse(BaseModel):
                 "scope_mode": "migrated",
                 "role": "owner",
                 "prepared_at": "2026-06-16T13:23:36.218984+00:00",
+                "conversation_id": "ed87845b-8d70-471f-a21e-a89ec9480291",
                 "answer": "Your laundry currently has 7 orders and 3 customers. Two orders are awaiting delivery."
             }
         }

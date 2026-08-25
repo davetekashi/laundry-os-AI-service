@@ -22,7 +22,11 @@ router = APIRouter(tags=["chat"])
         "first. The backend must send the authenticated role, not a role selected by the frontend. Staff answers "
         "cannot access owner-only financial information because it is absent from the staff snapshot.\n\n"
         "Send the same `laundry_id`, optional `business_id`, and `role` used for preparation. Branch contexts are "
-        "isolated, while a context prepared with only `business_id` remains business-wide."
+        "isolated, while a context prepared with only `business_id` remains business-wide.\n\n"
+        "Conversation continuity: omit `conversation_id` on the first message. The response returns one; send that "
+        "same value on every following message so Anne receives the recent user-and-Anne exchange. Reusing a "
+        "conversation id with another scope or role is rejected. Conversation history is stored in memory and is "
+        "cleared when the service restarts."
     ),
     responses={
         400: {
@@ -52,6 +56,7 @@ def chat_endpoint(payload: ChatRequest) -> ChatResponse:
             payload.role,
             payload.message,
             payload.business_id,
+            payload.conversation_id,
         )
     except ChatServiceError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
