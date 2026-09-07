@@ -4,6 +4,7 @@ httpx==0.28.1
 matplotlib==3.10.0
 openai==1.93.0
 openpyxl==3.1.5
+pypdfium2==4.30.0
 pymongo==4.10.1
 pydantic==2.11.7
 reportlab==4.2.5

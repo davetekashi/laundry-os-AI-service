@@ -7,6 +7,7 @@ import httpx
 
 MAX_SOURCE_FILE_BYTES = 20 * 1024 * 1024
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+PDF_SUFFIXES = {".pdf"}
 
 
 class SourceFileError(Exception):
@@ -48,6 +49,8 @@ def detect_source_kind(
 
     if normalized_type.startswith("image/") or suffix in IMAGE_SUFFIXES or image_signature:
         return "image", suffix if suffix in IMAGE_SUFFIXES else ".jpg"
+    if normalized_type == "application/pdf" or suffix in PDF_SUFFIXES or content.startswith(b"%PDF-"):
+        return "pdf", ".pdf"
     if (
         normalized_type
         == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -59,7 +62,7 @@ def detect_source_kind(
         return "csv", ".csv"
 
     raise SourceFileError(
-        "Source URL must point to a supported image, CSV, or XLSX file. "
+        "Source URL must point to a supported image, PDF, CSV, or XLSX file. "
         f"Received content-type '{content_type or 'unknown'}' and extension '{suffix or 'unknown'}'."
     )
 

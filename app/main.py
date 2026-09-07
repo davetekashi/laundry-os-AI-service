@@ -1,6 +1,7 @@
 from app.api.routes.chat import router as chat_router
 from app.api.routes.context import router as context_router
 from app.api.routes.customer import router as customer_router
+from app.api.routes.order_import import router as order_import_router
 from app.api.routes.report import router as report_router
 from fastapi import FastAPI
 
@@ -15,6 +16,7 @@ app = FastAPI(
         "This service currently supports:\n"
         "- Laundry price list digitization from Cloudflare-hosted image, CSV, or XLSX URLs.\n"
         "- Customer record extraction from one or more Cloudflare-hosted image, CSV, or XLSX files.\n"
+        "- Historical order extraction from Cloudflare-hosted images, PDFs, CSV, or XLSX files for backend-controlled migration.\n"
         "- Branch- and role-scoped context preparation for owner, business-manager, and staff users using MongoDB-backed business data.\n"
         "- Chat responses grounded only in the matching role-scoped in-memory laundry context.\n\n"
         "- Entity-specific PDF and Excel reports uploaded securely to Cloudflare R2.\n\n"
@@ -23,7 +25,8 @@ app = FastAPI(
         "2. Call `POST /api/v1/chat` using the same scope identifiers and authenticated `role`; retain the returned `conversation_id` and send it with subsequent messages in that conversation.\n"
         "3. Call `POST /api/v1/price-lists/normalize` whenever a laundry submits an item-price image for normalization.\n\n"
         "4. Call `POST /api/v1/customers/extract` to extract customer records from customer-list images.\n\n"
-        "5. Call `POST /api/v1/reports/generate` to generate an entity report and receive a temporary download URL.\n\n"
+        "5. Call `POST /api/v1/orders/extract` to convert historical order files into migration-ready JSON without writing to MongoDB.\n\n"
+        "6. Call `POST /api/v1/reports/generate` to generate an entity report and receive a temporary download URL.\n\n"
         "Important notes:\n"
         "- `/api/v1/chat` does not build context on demand. Matching business-scope-and-role context must already be prepared.\n"
         "- Prepared context is stored in memory only and is lost on service restart.\n"
@@ -52,6 +55,13 @@ app = FastAPI(
             ),
         },
         {
+            "name": "order-migration",
+            "description": (
+                "Endpoints for interpreting historical laundry receipts, invoices, PDFs, CSV files, and Excel workbooks "
+                "as populated order migration JSON. Extraction never persists orders or generates internal IDs."
+            ),
+        },
+        {
             "name": "chat",
             "description": (
                 "Endpoints for answering laundry business questions using only previously "
@@ -71,6 +81,7 @@ app = FastAPI(
 
 app.include_router(price_list_router, prefix="/api/v1")
 app.include_router(customer_router, prefix="/api/v1")
+app.include_router(order_import_router, prefix="/api/v1")
 app.include_router(context_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(report_router, prefix="/api/v1")

@@ -63,9 +63,10 @@ def scope_order_query(scope: ResolvedScope, extra: dict | None = None) -> dict:
     else:
         identity_query = {"laundryId": scope.laundry_id}
 
+    conditions = [identity_query, {"deletedAt": None}]
     if extra:
-        return {"$and": [identity_query, extra]}
-    return identity_query
+        conditions.append(extra)
+    return {"$and": conditions}
 
 
 def scope_legacy_query(scope: ResolvedScope) -> dict:
