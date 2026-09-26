@@ -10,7 +10,12 @@ from app.services.mongo import (
     get_database,
     orders_to_debts,
 )
-from app.services.scope import ResolvedScope, resolve_scope, scope_order_query
+from app.services.scope import (
+    ResolvedScope,
+    resolve_scope,
+    scope_legacy_query,
+    scope_order_query,
+)
 
 
 MAX_REPORT_RECORDS = 10_000
@@ -37,6 +42,7 @@ ORDER_PROJECTION = {
     "createdByRole": 1,
     "items": 1,
     "itemCount": 1,
+    "totalPieceCount": 1,
     "itemsSubtotal": 1,
     "discountTotal": 1,
     "taxTotal": 1,
@@ -337,7 +343,7 @@ def fetch_report_source(
     laundry_object_id = scope.laundry_id
     laundry = scope.laundry
 
-    base_query = {"laundryId": laundry_object_id}
+    base_query = scope_legacy_query(scope)
     related: dict[str, Any] = {}
     quality: dict[str, int] = {}
     related["scope"] = scope

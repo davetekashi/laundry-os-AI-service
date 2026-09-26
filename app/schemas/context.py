@@ -40,6 +40,7 @@ class ContextSnapshot(BaseModel):
     role: ContextRole
     prepared_at: str
     context: dict
+    retrieval_data: dict[str, list[dict]] = Field(default_factory=dict)
 
 
 class PrepareContextResponse(BaseModel):
@@ -91,6 +92,16 @@ class PrepareContextResponse(BaseModel):
                     "total_branches": 2,
                     "total_customers": 3,
                     "total_orders": 7,
+                    "prepared_record_counts": {
+                        "customers": 3,
+                        "orders": 7,
+                        "members": 4,
+                        "logistics": 2,
+                        "payments": 15,
+                        "expenses": 6,
+                        "debts": 2,
+                        "settlements": 1,
+                    },
                     "total_payment_events": 15,
                     "total_debt_records": 18,
                 },

@@ -1,6 +1,8 @@
 import json
+import re
 from collections import Counter, defaultdict
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from openai import OpenAI
 
@@ -16,6 +18,11 @@ from app.services.context_builder import (
     sum_numbers,
 )
 from app.services.mongo import fetch_laundry_report_documents
+from app.services.r2_storage import upload_report
+from app.services.weekly_report_workbook import (
+    build_weekly_workbook_data,
+    render_weekly_summary_workbook,
+)
 
 
 class WeeklySummaryReportError(Exception):
@@ -26,6 +33,11 @@ def ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def safe_filename_part(value: str) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "_", value.strip()).strip("_").lower()
+    return normalized or "laundry"
 
 
 def normalize_mongo_datetime(value: datetime | None) -> datetime | None:
@@ -134,17 +146,30 @@ def build_weekly_debt_summary(
 
 def build_weekly_payment_summary(payments: list[dict]) -> dict:
     status_counts = Counter(payment.get("status", "unknown") for payment in payments)
-    method_counts = Counter(payment.get("method", "unknown") for payment in payments)
-    channel_counts = Counter(payment.get("paymentChannel", "unknown") for payment in payments)
+    confirmed_payments = [
+        payment
+        for payment in payments
+        if str(payment.get("status") or "").casefold()
+        in {"confirmed", "completed", "paid", "success", "successful"}
+    ]
+    method_counts = Counter(
+        payment.get("method", "unknown") for payment in confirmed_payments
+    )
+    channel_counts = Counter(
+        payment.get("paymentChannel", "unknown") for payment in confirmed_payments
+    )
 
     top_payers: dict[str, float] = defaultdict(float)
-    for payment in payments:
+    for payment in confirmed_payments:
         payer_name = payment.get("payerSnapshot", {}).get("fullName") or "Unknown"
-        top_payers[payer_name] += float(payment.get("totalAmount", 0) or 0)
+        amount = float(payment.get("totalAmount", 0) or 0)
+        if str(payment.get("transactionType") or "").casefold() == "refund":
+            amount = -amount
+        top_payers[payer_name] += amount
 
     return {
-        "payment_count": len(payments),
-        "total_amount_received": sum_numbers(payments, "totalAmount"),
+        "payment_count": len(confirmed_payments),
+        "total_amount_received": sum(top_payers.values()),
         "status_counts": dict(status_counts),
         "method_counts": dict(method_counts),
         "payment_channel_counts": dict(channel_counts),
@@ -170,7 +195,13 @@ def build_weekly_order_summary(orders: list[dict]) -> dict:
         "total_balance_due": sum_numbers(orders, "totalBalanceDue"),
         "service_total": sum_numbers(orders, "serviceTotal"),
         "logistics_total": sum_numbers(orders, "logisticsTotal"),
-        "item_volume": int(sum(int(order.get("itemCount", 0) or 0) for order in orders)),
+        "item_line_count": int(sum(int(order.get("itemCount", 0) or 0) for order in orders)),
+        "total_piece_count": int(
+            sum(
+                int(order.get("totalPieceCount", order.get("itemCount", 0)) or 0)
+                for order in orders
+            )
+        ),
         "pickup_completed_count": sum(1 for order in orders if order.get("pickupCompleted")),
         "return_completed_count": sum(1 for order in orders if order.get("returnCompleted")),
         "order_status_counts": dict(order_status_counts),
@@ -323,7 +354,8 @@ def build_weekly_summary_prompt(facts: dict) -> str:
     return (
         "You are preparing a weekly business summary report for a laundry operations platform.\n"
         "Write a concise but informative plain-text report using only the computed facts provided.\n"
-        "Focus on what happened during the reporting window: orders, payments, customer activity, debt position, wallet posture, and operational signals.\n"
+        "Focus on what happened during the reporting window: physical pieces, orders, revenue, confirmed collections, older debt recovered, recorded expenses, profit or loss, customer activity, and operational signals.\n"
+        "Keep accounting profit or loss distinct from cash surplus or deficit, and do not combine current-period outstanding with all-time debt.\n"
         "Do not invent facts. If a section has little activity, say so naturally.\n"
         "Keep the tone professional and useful for a business owner.\n"
         "Return plain text only, no markdown bullets.\n\n"
@@ -420,7 +452,13 @@ def generate_weekly_summary_report(
     except Exception as exc:
         raise WeeklySummaryReportError("Failed to load report data from MongoDB.") from exc
 
+    workbook_data = build_weekly_workbook_data(raw_documents, start_date, end_date)
     facts = build_report_facts(raw_documents, start_date, end_date)
+    facts["financial_summary"] = workbook_data["metrics"]
+    facts["payment_methods"] = workbook_data["payment_methods"]
+    facts["expense_categories"] = workbook_data["expense_categories"]
+    facts["orders"]["item_line_count"] = workbook_data["metrics"]["item_line_count"]
+    facts["orders"]["total_piece_count"] = workbook_data["metrics"]["total_piece_count"]
 
     try:
         summary_text = generate_weekly_summary_text(facts)
@@ -432,6 +470,45 @@ def generate_weekly_summary_report(
         ) from exc
 
     scope = raw_documents["_scope"]
+    business = scope.business or {}
+    laundry_name = str(
+        business.get("name")
+        or business.get("businessName")
+        or raw_documents["laundry"].get("laundryName")
+        or "Laundry"
+    )
+    content = render_weekly_summary_workbook(
+        workbook_data,
+        laundry_name,
+        start_date,
+        end_date,
+    )
+    filename = (
+        f"{safe_filename_part(laundry_name)}_weekly_summary_"
+        f"{start_date:%Y-%m-%d}_to_{end_date:%Y-%m-%d}.xlsx"
+    )
+    scope_path = (
+        f"business-{scope.business_id}"
+        if scope.business_id
+        else f"laundry-{scope.laundry_id}"
+    )
+    now = datetime.now(UTC)
+    object_key = (
+        f"reports/{scope_path}/weekly-summary/{now:%Y/%m}/"
+        f"{uuid4().hex}.xlsx"
+    )
+    try:
+        download_url = upload_report(
+            content,
+            object_key,
+            filename,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as exc:
+        raise WeeklySummaryReportError(
+            "Failed to upload weekly summary workbook to Cloudflare R2."
+        ) from exc
+
     return WeeklySummaryReportResponse(
         success=True,
         laundry_id=str(scope.laundry_id),
@@ -441,6 +518,9 @@ def generate_weekly_summary_report(
         start_date=start_date.isoformat(),
         end_date=end_date.isoformat(),
         summary=summary_text,
+        filename=filename,
+        object_key=object_key,
+        download_url=download_url,
     )
 
 

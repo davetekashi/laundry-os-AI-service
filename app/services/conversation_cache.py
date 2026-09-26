@@ -59,3 +59,14 @@ def append_exchange(
         )
         if len(state.messages) > MAX_HISTORY_MESSAGES:
             state.messages = state.messages[-MAX_HISTORY_MESSAGES:]
+
+
+def clear_scope_conversations(scope_key: str, role: ContextRole) -> None:
+    with _CONVERSATION_LOCK:
+        stale_ids = [
+            conversation_id
+            for conversation_id, state in _CONVERSATION_CACHE.items()
+            if state.scope_key == scope_key and state.role == role
+        ]
+        for conversation_id in stale_ids:
+            del _CONVERSATION_CACHE[conversation_id]

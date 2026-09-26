@@ -2,7 +2,9 @@ from datetime import UTC, datetime
 
 from app.schemas.context import ContextRole, ContextSnapshot, PrepareContextResponse
 from app.services.context_builder import build_context_summary
+from app.services.context_records import build_retrieval_data
 from app.services.context_cache import set_context
+from app.services.conversation_cache import clear_scope_conversations
 from app.services.mongo import fetch_laundry_context_documents
 
 
@@ -29,6 +31,7 @@ def prepare_laundry_context(
     prepared_at = datetime.now(UTC).isoformat()
     scope = raw_context["_scope"]
     context = build_context_summary(raw_context, role)
+    retrieval_data = build_retrieval_data(raw_context, role)
     snapshot = ContextSnapshot(
         laundry_id=str(scope.laundry_id),
         business_id=str(scope.business_id) if scope.business_id else None,
@@ -38,8 +41,10 @@ def prepare_laundry_context(
         role=role,
         prepared_at=prepared_at,
         context=context,
+        retrieval_data=retrieval_data,
     )
     set_context(snapshot)
+    clear_scope_conversations(scope.cache_key, role)
 
     summary: dict = {
         "laundry_name": (
@@ -48,6 +53,9 @@ def prepare_laundry_context(
         ),
         "total_customers": context["customers"].get("total_customers", 0),
         "total_orders": context["orders"].get("total_orders", 0),
+        "prepared_record_counts": {
+            domain: len(records) for domain, records in retrieval_data.items()
+        },
     }
     if scope.is_business_wide:
         summary["business_name"] = context["business_profile"].get("business_name")

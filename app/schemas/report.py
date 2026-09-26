@@ -71,6 +71,16 @@ class WeeklySummaryReportResponse(BaseModel):
             "Protek Premium had an active week with 7 orders worth NGN 145,000 in total. Payments received during the period came to NGN 120,000, while 3 debt records remained outstanding with a combined balance of NGN 25,000."
         ],
     )
+    filename: str = Field(
+        description="Human-readable Excel workbook filename.",
+        examples=["protek_premium_weekly_summary_2026-09-01_to_2026-09-07.xlsx"],
+    )
+    object_key: str = Field(
+        description="Cloudflare R2 object key used to store the workbook.",
+    )
+    download_url: str = Field(
+        description="Temporary presigned URL for downloading the generated Excel workbook.",
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -78,10 +88,14 @@ class WeeklySummaryReportResponse(BaseModel):
                 "success": True,
                 "laundry_id": "6a54b1f08898ecb11ff0068f",
                 "business_id": "6a8496025e553211a5ecc1dd",
+                "branch_id": None,
                 "scope_mode": "migrated",
                 "start_date": "2026-06-09T00:00:00+00:00",
                 "end_date": "2026-06-16T23:59:59+00:00",
                 "summary": "Protek Premium had an active week with 7 orders worth NGN 145,000 in total. Payments received during the period came to NGN 120,000, while 3 debt records remained outstanding with a combined balance of NGN 25,000.",
+                "filename": "protek_premium_weekly_summary_2026-06-09_to_2026-06-16.xlsx",
+                "object_key": "reports/business-6a8496025e553211a5ecc1dd/weekly-summary/2026/06/report-id.xlsx",
+                "download_url": "https://example.r2.cloudflarestorage.com/...",
             }
         }
     }

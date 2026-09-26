@@ -69,7 +69,9 @@ STAFF_ORDER_PROJECTION = {
     "items.itemType": 1,
     "items.service": 1,
     "items.quantity": 1,
+    "items.pieceCount": 1,
     "itemCount": 1,
+    "totalPieceCount": 1,
     "orderStatus": 1,
     "paymentStatus": 1,
     "fulfillmentInfo": 1,
@@ -512,14 +514,24 @@ def _enrich_order_payments(
         receipt.get("_id"): receipt
         for receipt in db.customerpayments.find({"_id": {"$in": list(receipt_ids)}})
     }
-    customer_names = {
-        customer.get("_id"): " ".join(
+    customer_names: dict[ObjectId, str] = {}
+    for customer in customers:
+        name = " ".join(
             str(part)
             for part in (customer.get("firstName"), customer.get("lastName"))
             if part
         ).strip()
-        for customer in customers
-    }
+        if not name:
+            continue
+        for field_name in (
+            "_id",
+            "businessCustomerId",
+            "legacyLaundryCustomerId",
+            "userId",
+        ):
+            reference = customer.get(field_name)
+            if isinstance(reference, ObjectId):
+                customer_names[reference] = name
     enriched: list[dict] = []
     for payment in payments:
         row = dict(payment)
@@ -672,22 +684,84 @@ def fetch_laundry_report_documents(
     laundry_object_id = scope.laundry_id
     laundry = scope.laundry
 
+    base_query = scope_legacy_query(scope)
     payments_query = {
-        "laundryId": laundry_object_id,
+        **base_query,
         "transactionDate": {"$gte": start_date, "$lte": end_date},
     }
-    orders_query = {
-        "$and": [
-            scope_order_query(scope),
-            {"createdAt": {"$gte": start_date, "$lte": end_date}},
-        ]
-    }
+    orders_query = scope_order_query(
+        scope,
+        {"createdAt": {"$gte": start_date, "$lte": end_date}},
+    )
     logistics_query = {
-        "laundryId": laundry_object_id,
+        **base_query,
         "createdAt": {"$gte": start_date, "$lte": end_date},
     }
 
     all_orders = list(db.orders.find(scope_order_query(scope)))
+    orders_in_range = list(db.orders.find(orders_query))
+    customers = fetch_scope_customers(db, scope)
+    customer_payments = list(db.customerpayments.find(payments_query))
+    receipt_ids = [
+        payment["_id"]
+        for payment in customer_payments
+        if isinstance(payment.get("_id"), ObjectId)
+    ]
+    order_payment_date_expression = {
+        "$ifNull": [
+            "$paidAt",
+            {
+                "$ifNull": [
+                    "$confirmedAt",
+                    {"$ifNull": ["$recordedAt", "$createdAt"]},
+                ]
+            },
+        ]
+    }
+    period_order_payments = list(
+        db.orderpayments.find(
+            {
+                **base_query,
+                "$or": [
+                    {"customerPaymentId": {"$in": receipt_ids}},
+                    {
+                        "$expr": {
+                            "$and": [
+                                {"$gte": [order_payment_date_expression, start_date]},
+                                {"$lte": [order_payment_date_expression, end_date]},
+                            ]
+                        }
+                    },
+                ],
+            }
+        )
+    )
+    selected_order_ids = [
+        order["_id"]
+        for order in orders_in_range
+        if isinstance(order.get("_id"), ObjectId)
+    ]
+    selected_order_payments = list(
+        db.orderpayments.find(
+            {
+                **base_query,
+                "orderId": {"$in": selected_order_ids},
+            }
+        )
+    )
+    period_payment_order_ids = [
+        payment["orderId"]
+        for payment in period_order_payments
+        if isinstance(payment.get("orderId"), ObjectId)
+    ]
+    payment_orders = list(
+        db.orders.find(
+            scope_order_query(
+                scope,
+                {"_id": {"$in": period_payment_order_ids}},
+            )
+        )
+    )
     return {
         "_scope": scope,
         "laundry": laundry,
@@ -696,10 +770,29 @@ def fetch_laundry_report_documents(
             sort=[("isDefault", -1), ("createdAt", -1)],
         ),
         "wallet": db.laundrywallets.find_one({"laundryId": laundry_object_id}),
-        "customers": fetch_scope_customers(db, scope),
+        "customers": customers,
         "members": fetch_scope_members(db, scope),
-        "payments_in_range": list(db.customerpayments.find(payments_query)),
-        "orders_in_range": list(db.orders.find(orders_query)),
+        "payments_in_range": customer_payments,
+        "order_payments_in_range": _enrich_order_payments(
+            db,
+            period_order_payments,
+            customers,
+        ),
+        "selected_order_payments": _enrich_order_payments(
+            db,
+            selected_order_payments,
+            customers,
+        ),
+        "payment_orders": payment_orders,
+        "expenses_in_range": list(
+            db.laundryexpenses.find(
+                {
+                    **base_query,
+                    "expenseDate": {"$gte": start_date, "$lte": end_date},
+                }
+            )
+        ),
+        "orders_in_range": orders_in_range,
         "all_orders": all_orders,
         "all_debts": orders_to_debts(all_orders),
         "logistics_jobs_in_range": list(

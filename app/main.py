@@ -18,8 +18,9 @@ app = FastAPI(
         "- Customer record extraction from one or more Cloudflare-hosted image, CSV, or XLSX files.\n"
         "- Historical order extraction from Cloudflare-hosted images, PDFs, CSV, or XLSX files for backend-controlled migration.\n"
         "- Branch- and role-scoped context preparation for owner, business-manager, and staff users using MongoDB-backed business data.\n"
-        "- Chat responses grounded only in the matching role-scoped in-memory laundry context.\n\n"
+        "- Chat responses grounded in a compact overview plus exact role-scoped retrieval from prepared records.\n\n"
         "- Entity-specific PDF and Excel reports uploaded securely to Cloudflare R2.\n\n"
+        "- Weekly Excel business summaries with reconciled collections, expenses, customer balances, and profit/cash results.\n\n"
         "Integration flow for backend teams:\n"
         "1. Call `POST /api/v1/context/prepare` with only `business_id` for business-wide owner context, or with a branch `laundry_id` for branch context; always include the authenticated `role`.\n"
         "2. Call `POST /api/v1/chat` using the same scope identifiers and authenticated `role`; retain the returned `conversation_id` and send it with subsequent messages in that conversation.\n"
@@ -27,9 +28,10 @@ app = FastAPI(
         "4. Call `POST /api/v1/customers/extract` to extract customer records from customer-list images.\n\n"
         "5. Call `POST /api/v1/orders/extract` to convert historical order files into migration-ready JSON without writing to MongoDB.\n\n"
         "6. Call `POST /api/v1/reports/generate` to generate an entity report and receive a temporary download URL.\n\n"
+        "7. Call `POST /api/v1/reports/weekly-summary` to generate a weekly Excel workbook and receive a temporary download URL.\n\n"
         "Important notes:\n"
         "- `/api/v1/chat` does not build context on demand. Matching business-scope-and-role context must already be prepared.\n"
-        "- Prepared context is stored in memory only and is lost on service restart.\n"
+        "- Prepared context stores normalized searchable records in memory only and is lost on service restart.\n"
         "- File-processing endpoints expect Cloudflare-accessible URLs, not multipart file uploads."
     ),
     openapi_tags=[
@@ -43,8 +45,8 @@ app = FastAPI(
         {
             "name": "context",
             "description": (
-                "Endpoints for building and caching sanitized in-memory AI context "
-                "for a specific laundry using MongoDB-backed operational data."
+                "Endpoints for building and caching sanitized, searchable in-memory AI context "
+                "for a branch or whole business using MongoDB-backed operational data."
             ),
         },
         {
@@ -64,9 +66,9 @@ app = FastAPI(
         {
             "name": "chat",
             "description": (
-                "Endpoints for answering laundry business questions using only previously "
-                "prepared in-memory context. These endpoints are optimized for low-latency "
-                "responses after login-triggered context preparation."
+                "Endpoints for answering laundry business questions from previously prepared "
+                "overview and record data. Anne retrieves only the evidence needed for detailed "
+                "questions while ordinary conversation remains lightweight."
             ),
         },
         {

@@ -86,13 +86,21 @@ def generate_report_endpoint(payload: GenerateReportRequest) -> GenerateReportRe
 @router.post(
     "/reports/weekly-summary",
     response_model=WeeklySummaryReportResponse,
-    summary="Generate a weekly summary report for a laundry",
+    summary="Generate and upload a weekly business summary workbook",
     description=(
-        "Generates a plain-text weekly business summary for a laundry within a caller-specified ISO date range. "
-        "The endpoint computes factual metrics from MongoDB first, then uses the AI model only to convert those "
-        "facts into a narrative summary suitable for insertion into a document by the backend.\n\n"
+        "Generates a management-ready Excel workbook for a laundry within a caller-specified ISO date range, "
+        "uploads it to the configured private Cloudflare R2 bucket, and returns a temporary download URL. "
+        "The existing plain-text `summary` remains in the response for backward compatibility.\n\n"
         "The backend should send a branch `laundry_id`, a business-wide `business_id`, or both, plus `start_date` "
-        "and `end_date` in ISO 8601 format. When both ids are sent, the selected branch must belong to the business."
+        "and `end_date` in ISO 8601 format. When both ids are sent, the selected branch must belong to the business.\n\n"
+        "The workbook contains `Weekly Summary`, `Customer Summary`, and `Expenses` worksheets. Calculations are "
+        "performed in code, not by AI. Revenue comes from active orders created in the selected period; physical "
+        "volume uses `totalPieceCount` with a safe fallback; collections use confirmed payments received in the "
+        "period and distinguish selected-period orders from older debt; expenses use records whose `expenseDate` "
+        "falls within the selected period. Accounting profit/loss is revenue minus recorded expenses, while cash "
+        "surplus/deficit is period collections minus recorded expenses. The workbook contains structured figures "
+        "only, while AI is used solely for the separate narrative `summary`.\n\n"
+        "The `download_url` is a presigned URL and expires after one hour by default."
     ),
     responses={
         400: {
@@ -104,7 +112,7 @@ def generate_report_endpoint(payload: GenerateReportRequest) -> GenerateReportRe
             },
         },
         500: {
-            "description": "Unexpected server-side failure while generating the weekly report.",
+            "description": "Unexpected workbook-generation or Cloudflare R2 upload failure.",
             "content": {
                 "application/json": {
                     "example": {"detail": "Failed to generate weekly summary report."}
@@ -124,7 +132,13 @@ def weekly_summary_report_endpoint(
             payload.business_id,
         )
     except WeeklySummaryReportError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        message = str(exc)
+        status_code = 400 if message in {
+            "Laundry not found.",
+            "Business not found.",
+            "laundry_id and business_id do not belong together.",
+        } or message.startswith("Invalid ") else 500
+        raise HTTPException(status_code=status_code, detail=message) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=500,

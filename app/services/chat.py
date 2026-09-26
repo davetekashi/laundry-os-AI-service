@@ -1,12 +1,20 @@
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from openai import OpenAI
+from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.schemas.context import ContextRole
 from app.schemas.chat import ChatResponse
+from app.schemas.retrieval import RetrievalQuery
 from app.services.conversation_cache import append_exchange, load_conversation
 from app.services.context_cache import get_context
+from app.services.context_retrieval import (
+    execute_retrieval,
+    retrieval_tool_definition,
+)
 
 
 class ChatServiceError(Exception):
@@ -30,6 +38,8 @@ CHAT_SYSTEM_PROMPT = (
     "When access_scope.level is business, all aggregate domains represent the whole business and business_structure is authoritative for branch counts and comparisons; when it is branch, do not generalize branch figures to the whole business. "
     "Enter into the substance of the conversation instead of narrating the act of answering, and structure each response according to the question rather than a fixed format. "
     "Treat the supplied business context as the sole source of truth for claims about this specific laundry, including its customers, orders, operations, staff, and finances; never invent, estimate, or silently fill gaps in those facts. "
+    "The business context is a compact overview rather than the complete record set. When exact records, complete lists, searches, calendar periods, or comparisons are needed, use the retrieval tool and ground the answer in its result. "
+    "Treat retrieval results as authoritative prepared records, distinguish billed order value from confirmed cash collections, and never perform financial calculations from assumptions. "
     "For general conversation, explanations, brainstorming, and laundry or business-management guidance, use your broader knowledge and judgment naturally without requiring the answer to appear in the business context. "
     "Keep that distinction clear: general guidance must not be presented as a known fact about this laundry, and when the user asks for a laundry-specific conclusion the context cannot support, say what is not known. "
     "Do not claim access to live external information such as current laws, prices, market conditions, or recent events when it has not been supplied. "
@@ -52,11 +62,29 @@ def build_chat_context_prompt(context: dict, role: ContextRole) -> str:
         role_instruction = (
             "The authenticated user is the business owner and may receive all facts present in the prepared context."
         )
+    local_now = datetime.now(ZoneInfo("Africa/Lagos"))
     return (
         f"Access policy: {role_instruction}\n\n"
-        "Business context:\n"
+        f"Current local date and time (Africa/Lagos): {local_now.isoformat()}\n\n"
+        "Compact business overview:\n"
         f"{json.dumps(context, ensure_ascii=True, indent=2)}"
     )
+
+
+def _run_retrieval_tool(snapshot, tool_call) -> str:
+    try:
+        arguments = json.loads(tool_call.function.arguments or "{}")
+        query = RetrievalQuery.model_validate(arguments)
+        result = execute_retrieval(snapshot, query)
+        return json.dumps(result, ensure_ascii=True)
+    except (json.JSONDecodeError, ValidationError, ValueError) as exc:
+        return json.dumps(
+            {
+                "error": str(exc),
+                "instruction": "Correct the retrieval request or explain that the requested prepared data is unavailable.",
+            },
+            ensure_ascii=True,
+        )
 
 
 def _snapshot_scope_key(snapshot) -> str:
@@ -111,9 +139,44 @@ def answer_laundry_question(
     response = client.chat.completions.create(
         model=settings.openai_chat_model,
         messages=messages,
+        tools=[retrieval_tool_definition(role)],
+        tool_choice="auto",
     )
 
-    answer = response.choices[0].message.content
+    response_message = response.choices[0].message
+    if response_message.tool_calls:
+        messages.append(
+            {
+                "role": "assistant",
+                "content": response_message.content,
+                "tool_calls": [
+                    {
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments,
+                        },
+                    }
+                    for tool_call in response_message.tool_calls
+                ],
+            }
+        )
+        for tool_call in response_message.tool_calls:
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": _run_retrieval_tool(snapshot, tool_call),
+                }
+            )
+        grounded_response = client.chat.completions.create(
+            model=settings.openai_chat_model,
+            messages=messages,
+        )
+        answer = grounded_response.choices[0].message.content
+    else:
+        answer = response_message.content
     if not answer:
         raise ChatServiceError("OpenAI chat returned an empty response.")
     answer = answer.strip()

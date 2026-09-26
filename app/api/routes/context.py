@@ -13,9 +13,11 @@ router = APIRouter(tags=["context"])
 @router.post(
     "/context/prepare",
     response_model=PrepareContextResponse,
-    summary="Prepare and cache sanitized AI context for a laundry",
+    summary="Prepare searchable, role-scoped AI context for a business or branch",
     description=(
-        "Builds sanitized, role-scoped AI-ready business context and stores it in memory. "
+        "Builds sanitized, role-scoped AI-ready business context and stores it in memory. The prepared bundle "
+        "contains both a compact overview and normalized searchable records, allowing Anne to answer exact lists, "
+        "record searches, date-range questions, and comparisons without loading all records into every model prompt. "
         "This endpoint is intended to be triggered by the backend when a laundry user logs in so that "
         "subsequent chat calls can be faster.\n\n"
         "Identity: send `laundry_id`, `business_id`, or both. At least one is required. For a migrated "
@@ -27,9 +29,12 @@ router = APIRouter(tags=["context"])
         "wallet, expense, settlement and reconciliation information. Staff context contains only operational "
         "laundry, customer, member, order, logistics and catalog information. Staff payment visibility is limited "
         "to the order-level payment status already present on orders; order payment events and amounts are not fetched.\n\n"
-        "Snapshots are cached separately by branch and role. `/chat` should send the same identifiers and role used "
+        "Snapshots are cached separately by business/branch and role. A business-wide snapshot cannot overwrite its "
+        "primary branch snapshot. `/chat` should send the same identifiers and role used "
         "for preparation; this prevents one branch from reading another branch's prepared context.\n\n"
-        "Important: prepared context is stored in memory only and is cleared whenever this service restarts."
+        "Calling this endpoint again replaces that scope's prepared bundle and clears its previous conversation "
+        "history so stale statements do not survive refreshed data. Prepared context is stored in memory only and "
+        "is cleared whenever this service restarts."
     ),
     responses={
         400: {
