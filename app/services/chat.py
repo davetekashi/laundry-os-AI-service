@@ -10,7 +10,7 @@ from app.schemas.context import ContextRole
 from app.schemas.chat import ChatResponse
 from app.schemas.retrieval import RetrievalQuery
 from app.services.conversation_cache import append_exchange, load_conversation
-from app.services.context_cache import get_context
+from app.services.context_cache import get_context, snapshot_scope_key
 from app.services.context_retrieval import (
     execute_retrieval,
     retrieval_tool_definition,
@@ -87,16 +87,6 @@ def _run_retrieval_tool(snapshot, tool_call) -> str:
         )
 
 
-def _snapshot_scope_key(snapshot) -> str:
-    if snapshot.cache_key:
-        return snapshot.cache_key
-    if snapshot.branch_id:
-        return f"branch:{snapshot.branch_id}"
-    if snapshot.business_id:
-        return f"business:{snapshot.business_id}"
-    return f"laundry:{snapshot.laundry_id}"
-
-
 def answer_laundry_question(
     laundry_id: str | None,
     role: ContextRole,
@@ -113,7 +103,7 @@ def answer_laundry_question(
     try:
         resolved_conversation_id, history = load_conversation(
             conversation_id,
-            _snapshot_scope_key(snapshot),
+            snapshot_scope_key(snapshot),
             role,
         )
     except ValueError as exc:
@@ -137,7 +127,7 @@ def answer_laundry_question(
         },
     ]
     response = client.chat.completions.create(
-        model=settings.openai_chat_model,
+        model=settings.openai_anne_model,
         messages=messages,
         tools=[retrieval_tool_definition(role)],
         tool_choice="auto",
@@ -171,7 +161,7 @@ def answer_laundry_question(
                 }
             )
         grounded_response = client.chat.completions.create(
-            model=settings.openai_chat_model,
+            model=settings.openai_anne_model,
             messages=messages,
         )
         answer = grounded_response.choices[0].message.content

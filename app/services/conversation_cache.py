@@ -70,3 +70,37 @@ def clear_scope_conversations(scope_key: str, role: ContextRole) -> None:
         ]
         for conversation_id in stale_ids:
             del _CONVERSATION_CACHE[conversation_id]
+
+
+def get_conversation(conversation_id: str) -> ConversationState | None:
+    with _CONVERSATION_LOCK:
+        state = _CONVERSATION_CACHE.get(conversation_id)
+        if state is None:
+            return None
+        return ConversationState(
+            conversation_id=state.conversation_id,
+            scope_key=state.scope_key,
+            role=state.role,
+            messages=[dict(message) for message in state.messages],
+        )
+
+
+def restore_conversation(state_data: dict) -> ConversationState:
+    state = ConversationState(
+        conversation_id=str(state_data["conversation_id"]),
+        scope_key=str(state_data["scope_key"]),
+        role=ContextRole(state_data["role"]),
+        messages=[dict(message) for message in state_data.get("messages", [])],
+    )
+    if len(state.messages) > MAX_HISTORY_MESSAGES:
+        state.messages = state.messages[-MAX_HISTORY_MESSAGES:]
+    with _CONVERSATION_LOCK:
+        existing = _CONVERSATION_CACHE.get(state.conversation_id)
+        if existing is not None and (
+            existing.scope_key != state.scope_key or existing.role != state.role
+        ):
+            raise ValueError(
+                "conversation_id belongs to a different business scope or role."
+            )
+        _CONVERSATION_CACHE[state.conversation_id] = state
+    return state

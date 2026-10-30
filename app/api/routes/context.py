@@ -15,7 +15,7 @@ router = APIRouter(tags=["context"])
     response_model=PrepareContextResponse,
     summary="Prepare searchable, role-scoped AI context for a business or branch",
     description=(
-        "Builds sanitized, role-scoped AI-ready business context and stores it in memory. The prepared bundle "
+        "Builds sanitized, role-scoped AI-ready business context and stores it in persistent runtime storage. The prepared bundle "
         "contains both a compact overview and normalized searchable records, allowing Anne to answer exact lists, "
         "record searches, date-range questions, and comparisons without loading all records into every model prompt. "
         "This endpoint is intended to be triggered by the backend when a laundry user logs in so that "
@@ -33,8 +33,8 @@ router = APIRouter(tags=["context"])
         "primary branch snapshot. `/chat` should send the same identifiers and role used "
         "for preparation; this prevents one branch from reading another branch's prepared context.\n\n"
         "Calling this endpoint again replaces that scope's prepared bundle and clears its previous conversation "
-        "history so stale statements do not survive refreshed data. Prepared context is stored in memory only and "
-        "is cleared whenever this service restarts."
+        "history so stale statements do not survive refreshed data. On Cloudflare, prepared context survives "
+        "container sleep and restarts in Durable Object storage."
     ),
     responses={
         400: {

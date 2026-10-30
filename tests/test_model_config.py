@@ -14,9 +14,10 @@ REQUIRED_SETTINGS = {
 
 
 class ModelConfigurationTests(unittest.TestCase):
-    def test_all_openai_workloads_default_to_gpt_4_1(self):
+    def test_anne_defaults_to_gpt_5_4_mini_and_other_workloads_to_gpt_4_1(self):
         settings = Settings.model_validate(REQUIRED_SETTINGS)
 
+        self.assertEqual(settings.openai_anne_model, "gpt-5.4-mini")
         self.assertEqual(settings.openai_chat_model, "gpt-4.1")
         self.assertEqual(settings.openai_matching_model, "gpt-4.1")
         self.assertEqual(settings.openai_vision_model, "gpt-4.1")
@@ -25,12 +26,14 @@ class ModelConfigurationTests(unittest.TestCase):
         settings = Settings.model_validate(
             {
                 **REQUIRED_SETTINGS,
+                "OPENAI_ANNE_MODEL": "anne-override",
                 "OPENAI_CHAT_MODEL": "chat-override",
                 "OPENAI_MATCHING_MODEL": "matching-override",
                 "OPENAI_VISION_MODEL": "vision-override",
             }
         )
 
+        self.assertEqual(settings.openai_anne_model, "anne-override")
         self.assertEqual(settings.openai_chat_model, "chat-override")
         self.assertEqual(settings.openai_matching_model, "matching-override")
         self.assertEqual(settings.openai_vision_model, "vision-override")

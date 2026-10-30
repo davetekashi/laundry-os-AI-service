@@ -3,6 +3,7 @@ from app.api.routes.context import router as context_router
 from app.api.routes.customer import router as customer_router
 from app.api.routes.order_import import router as order_import_router
 from app.api.routes.report import router as report_router
+from app.api.routes.runtime_state import router as runtime_state_router
 from fastapi import FastAPI
 
 from app.api.routes.price_list import router as price_list_router
@@ -31,7 +32,7 @@ app = FastAPI(
         "7. Call `POST /api/v1/reports/weekly-summary` to generate a weekly Excel workbook and receive a temporary download URL.\n\n"
         "Important notes:\n"
         "- `/api/v1/chat` does not build context on demand. Matching business-scope-and-role context must already be prepared.\n"
-        "- Prepared context stores normalized searchable records in memory only and is lost on service restart.\n"
+        "- On Cloudflare, prepared context and conversation history persist across container sleep and restarts.\n"
         "- File-processing endpoints expect Cloudflare-accessible URLs, not multipart file uploads."
     ),
     openapi_tags=[
@@ -45,7 +46,7 @@ app = FastAPI(
         {
             "name": "context",
             "description": (
-                "Endpoints for building and caching sanitized, searchable in-memory AI context "
+                "Endpoints for building and persistently caching sanitized, searchable AI context "
                 "for a branch or whole business using MongoDB-backed operational data."
             ),
         },
@@ -87,6 +88,7 @@ app.include_router(order_import_router, prefix="/api/v1")
 app.include_router(context_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(report_router, prefix="/api/v1")
+app.include_router(runtime_state_router)
 
 
 @app.get(

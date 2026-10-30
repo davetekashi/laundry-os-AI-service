@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "laundry-os-ai-service",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-30",
+  "upload_source_maps": true,
+  "observability": {
+    "enabled": true
+  },
+  "containers": [
+    {
+      "class_name": "LaundryApiContainer",
+      "image": "./Dockerfile",
+      "instance_type": "basic",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "API_CONTAINER",
+        "class_name": "LaundryApiContainer"
+      }
+    ]
+  },
+  "exports": {
+    "LaundryApiContainer": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "secrets": {
+    "required": [
+      "OPENAI_API_KEY",
+      "MONGODB_URI",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+      "R2_ENDPOINT",
+      "R2_BUCKET_NAME",
+      "RUNTIME_STATE_TOKEN"
+    ]
+  }
+}

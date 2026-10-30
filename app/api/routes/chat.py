@@ -19,7 +19,7 @@ router = APIRouter(tags=["chat"])
         "about the laundry. For detailed questions, Anne can retrieve exact normalized records from the prepared "
         "bundle and the service performs filtering, period calculations, totals, and comparisons in code. Only the "
         "relevant evidence is sent back to Anne for explanation.\n\n"
-        "This endpoint does not build context on demand. If no prepared context exists in memory for the "
+        "This endpoint does not build context on demand. If no prepared context exists for the "
         "provided id and `role`, the request will fail and the backend should call `/context/prepare` "
         "first. The backend must send the authenticated role, not a role selected by the frontend. Staff answers "
         "cannot access owner-only financial information because it is absent from the staff snapshot.\n\n"
@@ -29,8 +29,8 @@ router = APIRouter(tags=["chat"])
         "metadata when additional matching records exist.\n\n"
         "Conversation continuity: omit `conversation_id` on the first message. The response returns one; send that "
         "same value on every following message so Anne receives the recent user-and-Anne exchange. Reusing a "
-        "conversation id with another scope or role is rejected. Conversation history is stored in memory and is "
-        "cleared when the service restarts."
+        "conversation id with another scope or role is rejected. On Cloudflare, conversation history survives "
+        "container sleep and restarts in Durable Object storage."
     ),
     responses={
         400: {

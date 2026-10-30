@@ -49,7 +49,7 @@ class PrepareContextResponse(BaseModel):
         description="Whether the context preparation completed successfully.",
     )
     laundry_id: str = Field(
-        description="Laundry id whose context was prepared and cached in memory.",
+        description="Laundry id whose context was prepared and cached.",
         examples=["6a54b1f08898ecb11ff0068f"],
     )
     business_id: str | None = Field(
@@ -69,7 +69,7 @@ class PrepareContextResponse(BaseModel):
         examples=["owner"],
     )
     prepared_at: str = Field(
-        description="UTC timestamp when the in-memory context snapshot was generated.",
+        description="UTC timestamp when the context snapshot was generated.",
         examples=["2026-06-16T13:23:36.218984+00:00"],
     )
     summary: dict = Field(

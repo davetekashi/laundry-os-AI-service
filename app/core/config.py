@@ -24,6 +24,10 @@ class Settings(BaseModel):
         default="gpt-4.1",
         alias="OPENAI_CHAT_MODEL",
     )
+    openai_anne_model: str = Field(
+        default="gpt-5.4-mini",
+        alias="OPENAI_ANNE_MODEL",
+    )
     default_currency: str = "NGN"
     report_download_url_expiry_seconds: int = 3600
 

@@ -12,6 +12,16 @@ def _business_key(business_id: str) -> str:
     return f"business:{business_id}"
 
 
+def snapshot_scope_key(snapshot: ContextSnapshot) -> str:
+    if snapshot.cache_key:
+        return snapshot.cache_key
+    if snapshot.branch_id:
+        return f"branch:{snapshot.branch_id}"
+    if snapshot.business_id:
+        return _business_key(snapshot.business_id)
+    return _laundry_key(snapshot.laundry_id)
+
+
 def set_context(snapshot: ContextSnapshot) -> None:
     if snapshot.branch_id or not snapshot.business_id:
         _CONTEXT_CACHE[(_laundry_key(snapshot.laundry_id), snapshot.role)] = snapshot
@@ -38,3 +48,9 @@ def get_context(
         if snapshot and snapshot.business_id == business_id and not snapshot.branch_id:
             return snapshot
     return None
+
+
+def restore_context(snapshot_data: dict) -> ContextSnapshot:
+    snapshot = ContextSnapshot.model_validate(snapshot_data)
+    set_context(snapshot)
+    return snapshot
